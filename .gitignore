@@ -1,0 +1,9 @@
+# Python 运行产物
+__pycache__/
+*.pyc
+
+# QtSim 源码包 (59M): 已决定仿真只用 analysis/ 下的 Python 孪生, 不入库
+user_feedback/QtSim_V10_Src/
+
+# 与原始 CSV 逐字节相同的重复文件
+user_feedback/*copy.csv

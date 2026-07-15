@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>立式炉 MIMO-MPC 先进控制 — 算法原理与实现</title>
+<script>
+window.MathJax = {
+  tex: { inlineMath: [['\\(','\\)']], displayMath: [['$$','$$'],['\\[','\\]']] },
+  svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+<style>
+:root{
+  --bg:#fbfcfe; --fg:#1d2330; --muted:#5b6573; --line:#e2e7ee;
+  --accent:#2563eb; --accent2:#0e7490; --code-bg:#f4f6fa; --warn:#b45309;
+  --ok:#15803d; --offline:#7c3aed; --online:#2563eb;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--fg);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Roboto,Helvetica,Arial,sans-serif;
+  line-height:1.75;font-size:16px}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+.layout{display:flex;align-items:flex-start;max-width:1280px;margin:0 auto}
+nav{position:sticky;top:0;align-self:flex-start;width:268px;height:100vh;overflow-y:auto;
+  padding:24px 14px 60px 22px;border-right:1px solid var(--line);font-size:14px;flex:0 0 auto}
+nav h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 6px}
+nav a{display:block;color:var(--muted);padding:3px 8px;border-radius:6px;border-left:2px solid transparent}
+nav a:hover{color:var(--fg);background:#eef2f9;text-decoration:none}
+nav a.active{color:var(--accent);background:#eaf1ff;border-left-color:var(--accent);font-weight:600}
+main{flex:1 1 auto;min-width:0;padding:30px 42px 120px;max-width:980px}
+h1{font-size:30px;line-height:1.3;margin:.2em 0 .1em}
+.sub{color:var(--muted);font-size:17px;margin:0 0 14px}
+h2{font-size:24px;margin:2.2em 0 .5em;padding-top:.4em;border-top:1px solid var(--line)}
+h3{font-size:19px;margin:1.6em 0 .4em;color:#0b1220}
+h4{font-size:16px;margin:1.2em 0 .3em;color:var(--accent2)}
+p,li{color:var(--fg)}
+code{font-family:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;font-size:.9em;
+  background:var(--code-bg);padding:1px 5px;border-radius:4px;color:#0b3b66}
+pre{background:#0f172a;color:#e2e8f0;border-radius:10px;padding:14px 16px;overflow-x:auto;
+  font-size:13.5px;line-height:1.6;border:1px solid #1e293b}
+pre code{background:none;color:inherit;padding:0}
+.k{color:#c792ea}.s{color:#c3e88d}.c{color:#637777;font-style:italic}.f{color:#82aaff}.n{color:#f78c6c}
+table{border-collapse:collapse;width:100%;margin:14px 0;font-size:14.5px}
+th,td{border:1px solid var(--line);padding:8px 11px;text-align:left;vertical-align:top}
+th{background:#eef2f9;font-weight:600}
+tr:nth-child(even) td{background:#f8fafc}
+.tag{display:inline-block;font-size:11.5px;font-weight:700;padding:2px 8px;border-radius:999px;color:#fff;letter-spacing:.02em}
+.tag.off{background:var(--offline)}.tag.on{background:var(--online)}.tag.batch{background:#0e7490}
+.callout{border:1px solid var(--line);border-left:4px solid var(--accent);background:#f5f8ff;
+  padding:12px 16px;border-radius:8px;margin:16px 0}
+.callout.warn{border-left-color:var(--warn);background:#fff8ef}
+.callout.ok{border-left-color:var(--ok);background:#f1faf3}
+.file{font-family:"SF Mono",ui-monospace,monospace;font-size:12.5px;color:#fff;background:#334155;
+  padding:1px 7px;border-radius:5px;display:inline-block}
+.eqwrap{overflow-x:auto;margin:.4em 0}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:980px){.grid2{grid-template-columns:1fr}}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:13.5px;color:var(--muted);margin:8px 0 0}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:12px;height:12px;border-radius:3px;display:inline-block}
+.small{font-size:13.5px;color:var(--muted)}
+hr{border:none;border-top:1px solid var(--line);margin:2.4em 0}
+.toc-top{font-weight:700;color:var(--fg);font-size:15px;margin-bottom:6px;display:block}
+svg{max-width:100%;height:auto}
+.footer{color:var(--muted);font-size:13px;margin-top:50px;border-top:1px solid var(--line);padding-top:16px}
+</style>
+</head>
+<body>
+<div class="layout">
+<nav id="toc">
+  <a class="toc-top" href="#top">立式炉 MPC 算法原理</a>
+  <h2>总览</h2>
+  <a href="#overview">1. 系统总览与数据流</a>
+  <a href="#notation">2. 符号与状态约定</a>
+  <h2>建模与辨识</h2>
+  <a href="#plant">3. 被控对象（合成炉）</a>
+  <a href="#disturb">4. 扰动建模（三类）</a>
+  <a href="#sysid">5. 系统辨识 ARX→ERA</a>
+  <h2>估计与稳定性</h2>
+  <a href="#observer">6. 增广卡尔曼观测器</a>
+  <a href="#target">7. 无静差目标计算</a>
+  <a href="#lyap">8. 李雅普诺夫机制</a>
+  <h2>控制器</h2>
+  <a href="#mpc">9. MIMO MPC（凝聚 QP）</a>
+  <a href="#pid">10. PID 基线</a>
+  <a href="#ilc">11. 迭代学习控制 ILC</a>
+  <a href="#calib">12. TC-wafer 偏置标定</a>
+  <a href="#loop">13. 闭环编排</a>
+  <h2>验证</h2>
+  <a href="#scenarios">14. 六个验证场景</a>
+  <a href="#caveats">15. 设计决策与诚实局限</a>
+</nav>
+
+<main id="top">
+<h1>立式炉 MIMO-MPC 先进控制<br>算法原理与实现</h1>
+<p class="sub">把 <code>concept.md</code> 的控制理论变成可运行、可验证的代码 —— 原理推导 + 实现方法 + 公式到代码的映射</p>
+
+<div class="callout">
+<b>这套系统做什么。</b> 在一个物理启发的 <b>15 状态合成立式炉</b>（当作"真实对象"）上，验证一套先进温控方案：
+<b>MIMO MPC</b>（模型预测控制）+ <b>扰动前馈/预览</b> + <b>增广卡尔曼观测器</b>（软测量晶圆温度 + 估计未测扰动 \(\hat f\)）+ <b>李雅普诺夫稳定性</b> + <b>批次间 ILC</b>。
+控制器跑在<b>最小二乘辨识</b>出的降阶模型上，全程统一采样 \(T_s=2\,\text{s}\)。
+</div>
+
+<div class="legend">
+  <span><span class="dot" style="background:var(--online)"></span> <span class="tag on">在线</span> 每个控制周期执行</span>
+  <span><span class="dot" style="background:#0e7490"></span> <span class="tag batch">批次级</span> 每炉/每批更新</span>
+  <span><span class="dot" style="background:var(--offline)"></span> <span class="tag off">离线</span> 标定/辨识阶段</span>
+</div>
+
+<!-- ===================== 1. OVERVIEW ===================== -->
+<h2 id="overview">1. 系统总览与数据流</h2>
+<p>控制律的最终形态是三层叠加（concept.md §10）：</p>
+<div class="eqwrap">$$ u_{\text{total}} = \underbrace{u_{\text{base}}}_{\text{标称前馈}} + \underbrace{u_{\text{ILC}}}_{\text{批次学习}} + \underbrace{u_{\text{MPC}}}_{\text{实时反馈}} $$</div>
+<p>下图是一个控制周期内的信息流。蓝色是<b>在线</b>回路（每 2 s），紫色是<b>离线</b>准备，青色是<b>批次级</b>学习。</p>
+
+<svg viewBox="0 0 900 430" font-family="-apple-system,Segoe UI,Roboto,sans-serif" font-size="13">
+  <defs>
+    <marker id="arr" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 z" fill="#475569"/>
+    </marker>
+  </defs>
+  <!-- offline boxes -->
+  <rect x="20" y="20" width="150" height="48" rx="8" fill="#f3effd" stroke="#7c3aed"/>
+  <text x="95" y="40" text-anchor="middle" fill="#5b21b6" font-weight="600">PRBS 激励实验</text>
+  <text x="95" y="58" text-anchor="middle" fill="#7c3aed" font-size="11">sysid.py</text>
+  <rect x="200" y="20" width="170" height="48" rx="8" fill="#f3effd" stroke="#7c3aed"/>
+  <text x="285" y="40" text-anchor="middle" fill="#5b21b6" font-weight="600">辨识降阶模型</text>
+  <text x="285" y="58" text-anchor="middle" fill="#7c3aed" font-size="11">ARX→ERA: A,B,E,Cy,Cz</text>
+  <line x1="170" y1="44" x2="198" y2="44" stroke="#7c3aed" marker-end="url(#arr)"/>
+  <line x1="285" y1="68" x2="285" y2="150" stroke="#7c3aed" stroke-dasharray="4 3" marker-end="url(#arr)"/>
+  <text x="300" y="112" fill="#7c3aed" font-size="11">模型 →</text>
+
+  <!-- online loop -->
+  <rect x="120" y="150" width="120" height="56" rx="8" fill="#eef4ff" stroke="#2563eb"/>
+  <text x="180" y="174" text-anchor="middle" font-weight="600">配方 r(k)</text>
+  <text x="180" y="192" text-anchor="middle" fill="#2563eb" font-size="11">recipe.py</text>
+
+  <rect x="300" y="150" width="150" height="56" rx="8" fill="#eef4ff" stroke="#2563eb"/>
+  <text x="375" y="170" text-anchor="middle" font-weight="600">MIMO MPC</text>
+  <text x="375" y="186" text-anchor="middle" fill="#2563eb" font-size="11">凝聚 QP / move-block</text>
+  <text x="375" y="200" text-anchor="middle" fill="#2563eb" font-size="11">mpc.py</text>
+
+  <rect x="510" y="150" width="120" height="56" rx="8" fill="#eef4ff" stroke="#2563eb"/>
+  <text x="570" y="174" text-anchor="middle" font-weight="600">Σ 执行</text>
+  <text x="570" y="192" text-anchor="middle" fill="#2563eb" font-size="11">+u_ILC, clip</text>
+
+  <rect x="690" y="150" width="170" height="56" rx="8" fill="#fff4ee" stroke="#ea580c"/>
+  <text x="775" y="170" text-anchor="middle" font-weight="600">真实立式炉</text>
+  <text x="775" y="186" text-anchor="middle" fill="#ea580c" font-size="11">15 态 + 噪声 + 老化</text>
+  <text x="775" y="200" text-anchor="middle" fill="#ea580c" font-size="11">plant.py</text>
+
+  <rect x="430" y="300" width="200" height="60" rx="8" fill="#eef4ff" stroke="#2563eb"/>
+  <text x="530" y="322" text-anchor="middle" font-weight="600">增广卡尔曼观测器</text>
+  <text x="530" y="338" text-anchor="middle" fill="#2563eb" font-size="11">软测量 ẑ + 扰动估计 δ̂</text>
+  <text x="530" y="352" text-anchor="middle" fill="#2563eb" font-size="11">observer.py</text>
+
+  <!-- batch -->
+  <rect x="120" y="300" width="180" height="60" rx="8" fill="#ecfeff" stroke="#0e7490"/>
+  <text x="210" y="322" text-anchor="middle" font-weight="600" fill="#155e75">ILC（批次学习）</text>
+  <text x="210" y="338" text-anchor="middle" fill="#0e7490" font-size="11">范数最优 + 能量门</text>
+  <text x="210" y="352" text-anchor="middle" fill="#0e7490" font-size="11">ilc.py</text>
+
+  <!-- arrows online -->
+  <line x1="240" y1="178" x2="298" y2="178" stroke="#475569" marker-end="url(#arr)"/>
+  <line x1="450" y1="178" x2="508" y2="178" stroke="#475569" marker-end="url(#arr)"/>
+  <line x1="630" y1="178" x2="688" y2="178" stroke="#475569" marker-end="url(#arr)"/>
+  <!-- furnace -> observer (y meas) -->
+  <path d="M775,206 L775,330 L632,330" fill="none" stroke="#475569" marker-end="url(#arr)"/>
+  <text x="700" y="324" fill="#475569" font-size="11">y = Spike/Profile（含噪）</text>
+  <!-- observer -> mpc (xhat, dhat, zhat) -->
+  <path d="M430,326 L375,326 L375,208" fill="none" stroke="#475569" marker-end="url(#arr)"/>
+  <text x="378" y="250" fill="#475569" font-size="11">x̂, δ̂, ẑ</text>
+  <!-- ilc -> sum -->
+  <path d="M300,330 L350,330 L350,240 L570,240 L570,208" fill="none" stroke="#0e7490" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+  <text x="430" y="234" fill="#0e7490" font-size="11">u_ILC（批次前馈）</text>
+  <!-- furnace -> ilc (batch error) -->
+  <path d="M775,206 L775,400 L210,400 L210,362" fill="none" stroke="#0e7490" stroke-dasharray="5 3" marker-end="url(#arr)"/>
+  <text x="430" y="416" fill="#0e7490" font-size="11">e_j = r − z（每炉结束）</text>
+</svg>
+
+<table>
+<tr><th>层级</th><th>频率</th><th>职责</th><th>代码</th></tr>
+<tr><td><span class="tag off">离线</span> 辨识</td><td>一次</td><td>PRBS 激励 → 最小二乘 ARX → ERA 降阶模型 \((A,B,E,C_y,C_z)\)</td><td><span class="file">sysid.py</span></td></tr>
+<tr><td><span class="tag off">离线</span> 标定</td><td>每配方</td><td>仪器晶圆（TC-wafer）测真实晶圆温，学每区软测量偏置</td><td><span class="file">closed_loop.py</span></td></tr>
+<tr><td><span class="tag on">在线</span> 观测</td><td>0.5 Hz</td><td>由 y 估计状态 x̂、软测量 ẑ、未测扰动 δ̂（=\(\hat f\)）</td><td><span class="file">observer.py</span></td></tr>
+<tr><td><span class="tag on">在线</span> MPC</td><td>0.5 Hz</td><td>解凝聚 QP，给出 5 区功率，含约束/前馈/预览/终端代价</td><td><span class="file">mpc.py</span></td></tr>
+<tr><td><span class="tag batch">批次</span> ILC</td><td>每炉</td><td>学重复误差的前馈功率，受实测能量李雅普诺夫门保护</td><td><span class="file">ilc.py</span></td></tr>
+</table>
+
+<!-- ===================== 2. NOTATION ===================== -->
+<h2 id="notation">2. 符号与状态约定</h2>
+<table>
+<tr><th>符号</th><th>含义</th><th>维度</th></tr>
+<tr><td>\(u_k\)</td><td>5 个温区加热功率（0–100%）</td><td>5</td></tr>
+<tr><td>\(d_k\)</td><td>可测扰动：气体、压力、炉门、舟载荷×5</td><td>8</td></tr>
+<tr><td>\(y_k\)</td><td><b>可测</b>输出：Spike(5)+Profile(5) 热电偶</td><td>10</td></tr>
+<tr><td>\(z_k\)</td><td><b>不可测</b>目标：晶圆温度（靠软测量 \(\hat z\)）</td><td>5</td></tr>
+<tr><td>\(x_k\)</td><td>降阶模型状态（ERA 实现，无物理含义）</td><td>18</td></tr>
+<tr><td>\(\hat\delta_k\)</td><td>未测扰动估计（concept 的 \(\hat f\)），功率向输入扰动</td><td>5</td></tr>
+<tr><td>\(r_k\)</td><td>配方晶圆温度设定（ramp/soak/cooldown）</td><td>5</td></tr>
+</table>
+<div class="callout warn"><b>偏差坐标 vs 绝对坐标。</b> 辨识模型是<b>偏差模型</b>（围绕工作点去均值），而炉子跑在<b>绝对温度</b>。
+观测器/MPC 在偏差坐标工作（输入用绝对 \(u\)），<span class="file">closed_loop.py</span> 负责工作点换算 \((u_{op},y_{op},z_{op})\)。
+无静差由观测器的积分扰动 \(\hat\delta\) 自动吸收常值偏置。</div>
+
+<!-- ===================== 3. PLANT ===================== -->
+<h2 id="plant">3. 被控对象：合成立式炉 <span class="tag off">离线真值</span></h2>
+<p>5 个温区，每区 3 个热节点（从加热丝向负载方向串联）：</p>
+<table>
+<tr><th>节点</th><th>时间常数</th><th>测量</th></tr>
+<tr><td>Spike（加热丝侧）</td><td>快 ~10 s</td><td>热电偶（属于 \(y\)）</td></tr>
+<tr><td>Profile（炉管侧）</td><td>中 ~25 s</td><td>热电偶（属于 \(y\)）</td></tr>
+<tr><td>Wafer（负载侧）</td><td>慢 ~130 s</td><td><b>不测</b> —— 软测量目标 \(z\)</td></tr>
+</table>
+<p>每个节点写能量平衡（以 Spike 为例），相邻区通过管壁/晶圆耦合，端区（1、5）散热更多 → 经典"边缘效应"：</p>
+<div class="eqwrap">$$ C_s\,\dot T_s^i = k\,u_i \;-\; g_{sp}(T_s^i-T_p^i)\;-\;g_{a,s}(T_s^i-T_{amb})\;-\;\sum_{j\sim i} g_{zz}(T_s^i-T_s^j) $$</div>
+<p>对所有节点写出后得到连续 LTI 系统，ZOH 离散化（<span class="file">model.py</span> 的 <code>c2d</code>，用矩阵指数）得到：</p>
+<div class="eqwrap">$$ x_{k+1}=A x_k + B u_k + E d_k,\qquad y_k = C_y x_k,\qquad z_k = C_z x_k $$</div>
+
+<h4>不可测扰动 = 加热器老化（功率亏损）</h4>
+<p>关键建模选择：老化建成"实际送入 Spike 节点的功率比指令少"，即 \(u_{\text{eff}} = u - \Delta p_{\text{aging}}\)。
+它<b>会影响可测的 Spike/Profile</b>，且落在观测器输入扰动 \(B_d{=}B\) 的张成空间里 → <b>可观、可补偿</b>。
+（若把扰动放在纯负载侧晶圆节点，则几乎不可观 —— 这正是 concept.md 强调的软测量极限。）</p>
+<pre><code><span class="k">def</span> <span class="f">step</span>(self, u, d):
+    y_meas, y_true, z = self.measure(u, d)       <span class="c"># 含 TC 噪声</span>
+    u_eff = np.clip(u - self._power_deficit(), 0, 100)  <span class="c"># 未测老化</span>
+    self.x = A @ self.x + B @ u_eff + E @ d + x_offset
+    <span class="k">return</span> y_meas, y_true, z, self.x</code></pre>
+
+<!-- ===================== 4. DISTURBANCE ===================== -->
+<h2 id="disturb">4. 扰动建模：三类处理 <span class="tag on">在线</span></h2>
+<p>concept.md §1–2,§8 把扰动按"能否测、能否预知"分三类，分别进不同通道：</p>
+<table>
+<tr><th>类别</th><th>例子</th><th>给 MPC 的形式</th><th>实现</th></tr>
+<tr><td><b>可测</b></td><td>当前气体/压力/舟位</td><td>当前值 \(d_k\) 进前馈</td><td>观测器 + MPC 都收到 \(d_k\)</td></tr>
+<tr><td><b>可预知未来</b></td><td>配方排程的开气/进舟</td><td>预览 \(d_{k:k+H}\)</td><td><code>preview_from</code> 取 <code>D_known</code></td></tr>
+<tr><td><b>测不到</b></td><td>老化、污染、漂移</td><td>观测器估成 \(\hat\delta\)</td><td>增广卡尔曼</td></tr>
+</table>
+<p>舟载荷用"重叠权重"量化（concept §10）：舟在位置 \(p\) 时与第 \(i\) 区的重叠 \(\text{overlap}_i(p)\) 乘以装片数，得到每区移动热负载。
+对"可测但未来未知"的通道（如压力），预览时<b>保持最后测量值不变</b>：\(d_{k+i}=d_k\)。</p>
+
+<!-- ===================== 5. SYSID ===================== -->
+<h2 id="sysid">5. 系统辨识：PRBS → 最小二乘 ARX → ERA <span class="tag off">离线</span></h2>
+<p>concept.md §5–6：用最小二乘从数据辨识温度场模型，<b>包括扰动矩阵 \(E\)</b>，再降阶成可控可观的状态空间。</p>
+
+<h3>5.1 MIMO ARX 最小二乘</h3>
+<p>把可测与软测量目标堆叠 \(w=[y;z]\)，用 PRBS 同时激励功率和各扰动通道，做 ARX 回归：</p>
+<div class="eqwrap">$$ w_k = \sum_{i=1}^{n_a} A_i\,w_{k-i} + \sum_{i=1}^{n_b} B_i\,u_{k-i} + \sum_{i=1}^{n_b} E_i\,d_{k-i} $$</div>
+<p>堆成回归矩阵 \(\Phi\)（过去 \(w,u,d\)）和目标 \(W\)，岭正则最小二乘一次解出全部系数（含 \(E\)）：</p>
+<div class="eqwrap">$$ \Theta = (\Phi^\top\Phi + \lambda I)^{-1}\Phi^\top W $$</div>
+
+<h3>5.2 ARX → Markov 参数 → ERA 实现</h3>
+<p>ARX 是预测器，不直接给状态空间。先由 ARX 递推算脉冲响应（Markov 参数，输入 \(v=[u;d]\)）：</p>
+<div class="eqwrap">$$ H_0=0,\qquad H_j = \sum_{i=1}^{\min(j,n_a)} A_i\,H_{j-i} + B^v_j \quad(B^v_j{=}[B_j\,|\,E_j],\ j\le n_b) $$</div>
+<p>再用 <b>ERA（特征系统实现算法）</b>：对 Markov 参数搭 Hankel 块矩阵 \(\mathcal H_0,\mathcal H_1\)，SVD 截断到阶 \(n\)：</p>
+<div class="eqwrap">$$ \mathcal H_0 = U\Sigma V^\top \;\to\; A=\Sigma_n^{-1/2}U_n^\top \mathcal H_1 V_n\Sigma_n^{-1/2},\quad
+[B\,|\,E]=(\Sigma_n^{1/2}V_n^\top)_{:,1:n_v},\quad [C_y;C_z]=(U_n\Sigma_n^{1/2})_{1:n_w,:} $$</div>
+<div class="callout ok"><b>结果。</b> 阶数 18，自由仿真 VAF：晶圆 <b>99.8%</b>、可测 99.96%（见 <code>s1_sysid_fit.png</code> / <code>s1_sysid_validation.png</code>）。
+Hankel 奇异值在第 ~120 个后断崖到 \(10^{-14}\)，证明真实动态确为有限阶。不稳定极点做反射稳定化兜底。</div>
+
+<!-- ===================== 6. OBSERVER ===================== -->
+<h2 id="observer">6. 增广卡尔曼观测器：软测量 + 扰动估计 <span class="tag on">在线</span></h2>
+<p>晶圆温度 \(z\) 不可测，且有老化等未测扰动。做法（concept §5,§7）：把状态<b>增广一个积分输入扰动</b> \(\delta\)（建模为功率偏置，\(B_d=B\)），用稳态卡尔曼滤波由 \(y\) 估计 \([x;\delta]\)。</p>
+<div class="eqwrap">$$ \begin{bmatrix}x\\\delta\end{bmatrix}_{k+1}=
+\underbrace{\begin{bmatrix}A&B_d\\0&I\end{bmatrix}}_{A_a}\begin{bmatrix}x\\\delta\end{bmatrix}_k
++\begin{bmatrix}B\\0\end{bmatrix}u_k+\begin{bmatrix}E\\0\end{bmatrix}d_k,\qquad
+y_k=\underbrace{[\,C_y\ \ 0\,]}_{C_a}\begin{bmatrix}x\\\delta\end{bmatrix}_k $$</div>
+<p>稳态卡尔曼增益 \(L\) 由滤波 DARE 求得；每步先校正再预测：</p>
+<div class="eqwrap">$$ \hat\xi_{k|k}=\hat\xi_{k|k-1}+L\,(y_k-C_a\hat\xi_{k|k-1}),\qquad \hat\xi_{k+1|k}=A_a\hat\xi_{k|k}+B_a u_k+E_a d_k $$</div>
+<p>软测量 \(\hat z=C_z\hat x\)；\(\hat\delta\) 就是 concept 的 \(\hat f\)。可检测性用 <b>PBH 判据</b>（不是过严的完全可观），也是无静差的充要条件：</p>
+<div class="eqwrap">$$ \operatorname{rank}\begin{bmatrix}I-A & -B_d\\ C_y & 0\end{bmatrix}=n_x+n_\delta $$</div>
+<p>误差动态 \(e_{k+1}=A_a(I-LC_a)e_k\) 的谱半径 ~0.97（Schur）；解离散李雅普诺夫方程 \(A_e^\top P_o A_e - P_o=-I\) 得 \(P_o\succ0\) 作收敛证书。</p>
+<div class="callout ok"><b>效果。</b> \(\hat\delta\) 精确收敛到注入的老化亏损（如 \([-6.4,-7.2,-8,-8.8,-9.6]\%\)），soak 跟踪对老化<b>完全无静差</b>，软测量误差 ~1.5℃。</div>
+
+<!-- ===================== 7. TARGET ===================== -->
+<h2 id="target">7. 无静差稳态目标计算 <span class="tag on">在线</span></h2>
+<p>给定设定 \(r\)、扰动估计 \(\hat\delta\)、前馈 \(d_{ff}\)，算出能让 \(C_z x_{ss}=r\) 的<b>唯一</b>稳态 \((x_{ss},u_{ss})\)。用显式 DC 增益（方阵可逆），保证 \(x_{ss}\) 与观测器收敛到的状态一致 —— 这对终端李雅普诺夫函数在跟踪处归零至关重要：</p>
+<div class="eqwrap">$$ G=C_z(I-A)^{-1}B,\quad u_{ss}=G^{-1}\!\big(r-C_z(I-A)^{-1}(B_d\hat\delta+E d_{ff})\big),\quad x_{ss}=(I-A)^{-1}(B u_{ss}+B_d\hat\delta+E d_{ff}) $$</div>
+
+<!-- ===================== 8. LYAPUNOV ===================== -->
+<h2 id="lyap">8. 李雅普诺夫机制 <span class="tag on">在线</span></h2>
+<p>concept.md §3–4,§7：不是把控制器改成"李雅普诺夫控制器"，而是给 MPC 加稳定性证书与约束。</p>
+
+<h4>终端权 \(P\)（DARE 代价函数）</h4>
+<p>取状态代价 \(Q_x=C_z^\top Q_z C_z\)（映射到晶圆误差），解离散 LQR：</p>
+<div class="eqwrap">$$ P=A^\top P A-A^\top P B(R+B^\top P B)^{-1}B^\top P A+Q_x,\qquad K=(R+B^\top P B)^{-1}B^\top P A $$</div>
+<p>跟踪型李雅普诺夫函数（到当前目标的"距离能量"）：\( V(x)=(x-x^\star)^\top P(x-x^\star)\)。</p>
+
+<h4>下降约束 + ISS 松弛</h4>
+<p>在 MPC 里加（带松弛 \(\epsilon\ge0\)，目标里罚 \(\rho\epsilon^2\)）：</p>
+<div class="eqwrap">$$ V(x_{k+1})-V(x_k)\;\le\;-\alpha\|z_k-r_k\|^2+\epsilon $$</div>
+<p>含义：无扰动时误差能量必须下降；有扰动时允许被顶起一点但有界（ISS）。数值上 \(V\) 量级达 \(10^6\)，需按 <code>Vscale</code> 归一化锥约束才不会被求解器误判不可行。</p>
+<div class="callout warn"><b>诚实标注。</b> 因为代价罚的是 <b>Δu（功率增量）</b>而非绝对功率，这个 \(P\) 是<b>稳定化终端罚</b>，
+不构成对 Δu 代价的严格 CLF（严格版需速度型增广 \([x;u_{prev}]\) 的终端权）。静态 DARE 残差 \(\sim10^{-14}\) 只是<b>构造性校验</b>；
+真对象闭环稳定性靠<b>经验</b>验证（\(V_k\) 朝目标下降、系统稳定）。</div>
+
+<!-- ===================== 9. MPC ===================== -->
+<h2 id="mpc">9. MIMO MPC：凝聚 QP / 移动阻塞 <span class="tag on">在线</span></h2>
+<h3>9.1 优化问题</h3>
+<div class="eqwrap">$$ \min_{u_{0:H-1},\,s,\,\epsilon}\;
+\sum_{i=1}^{H}\|z_i-r_i\|_{Q_z}^2+\sum_{i=0}^{H-1}\|\Delta u_i\|_R^2
++\underbrace{\|x_H-x^\star\|_P^2}_{\text{终端代价}}+\rho_s\|s\|^2+\rho\epsilon^2 $$</div>
+<table>
+<tr><th>约束</th><th>表达</th></tr>
+<tr><td>动力学（含前馈）</td><td>\(x_{i+1}=Ax_i+Bu_i+w_i,\quad w_i=B_d\hat\delta+E d_i - B u_{op}\)</td></tr>
+<tr><td>功率上下限 / 速率</td><td>\(0\le u_i\le100,\quad |\Delta u_i|\le \Delta u_{\max}\)</td></tr>
+<tr><td>Spike 安全（软）</td><td>\(C_{spk}x_i\le (T_{\max}-\text{margin})+s_i,\ s_i\ge0\)</td></tr>
+<tr><td>李雅普诺夫下降（可选）</td><td>见 §8</td></tr>
+</table>
+<p>设定预览 \(r_{k:k+H}\) 让 MPC 提前为升温段加功率；扰动预览 \(d_{k:k+H}\) 让它提前抵消已知扰动。</p>
+
+<h3>9.2 凝聚 + 移动阻塞（让 QP 又小又快）</h3>
+<p>把状态用初值和输入显式表示（多步预测矩阵 \(\Phi,\Gamma_u,\Gamma_w\) 离线算好一次）：</p>
+<div class="eqwrap">$$ X=\Phi x_0+\Gamma_u U+\Gamma_w W,\qquad U=S_{\text{blk}}\,u_m\ \ (\text{move blocking}) $$</div>
+<p>决策变量只剩少数"移动块" \(u_m\)（约 11 个）+ 松弛，用 cvxpy 的 <code>Parameter</code> 一次编译、每步快速重解（OSQP 解 QP，含下降约束时 Clarabel 解锥）。自由响应（含 \(x_0,W\)）用 numpy 现算成参数传入，cvxpy 只看小的仿射映射 —— 既满足 DPP 又快。</p>
+<pre><code><span class="c"># 验证：凝聚预测 == 直接滚动，误差 7e-15（机器精度）</span>
+W = (Bd @ delta_hat - B @ u_op) + d_preview @ E.T   <span class="c"># 每步前馈 w_j</span>
+free_X = Phi @ x_hat + Gw @ W.reshape(-1)            <span class="c"># 自由响应（numpy）</span>
+Z_res  = Mz_um @ u_m + (freeZ - r_traj)             <span class="c"># 跟踪残差（cvxpy 仿射）</span>
+cost   = qz*ss(Z_res) + r_du*ss(dU) + ss(Lp @ xH_res) + ...</code></pre>
+<div class="callout"><b>工作点处理。</b> MPC 用<b>绝对</b> \(u\)（边界天然 0–100），把 \(-Bu_{op}\) 折进每步前馈 \(w\)，把 \(+\text{spike}_{op}\) 折进 Spike 约束，
+设定/终端目标按 \(z_{op}\) 平移到偏差坐标。</div>
+
+<!-- ===================== 10. PID ===================== -->
+<h2 id="pid">10. PID 基线（对照） <span class="tag on">在线</span></h2>
+<p>5 个独立 PID，各控一个<b>可测的 Profile 热电偶</b>到"标定设定 = 晶圆设定 + profile 偏置"。
+偏置在 <b>soak 工艺温度</b>处标定（公平），带抗积分饱和。这是一个调得不错的经典基线 —— 它<b>没有</b> MIMO 协调、约束处理和前馈，正好凸显 MPC 多出来的能力。</p>
+<div class="callout"><b>公平对比结论。</b> MPC 在<b>动态</b>上完胜（升温 RMS 3.2 vs 43.6、超调 7.7 vs 51℃、约束被守住）；
+而公平标定后的 PID 在<b>稳态分区均匀性</b>上反而更好（PID 0.15 vs MPC 1.47℃，因为 MPC 受软测量模型失配限制）——
+见 §12 如何用 TC-wafer 标定把 MPC 这点补回到 0.28℃。</div>
+
+<!-- ===================== 11. ILC ===================== -->
+<h2 id="ilc">11. 迭代学习控制 ILC + 李雅普诺夫门 <span class="tag batch">批次</span></h2>
+<p>concept.md §6：批次间学习<b>重复</b>误差的前馈，反馈来不及的它提前补。把一炉堆成长向量（提升系统）。</p>
+<h4>提升系统 + 范数最优更新</h4>
+<p>\(G\) 是 \(u\to z\) 的提升矩阵（Markov 参数的块下三角 Toeplitz）。范数最优 ILC（模型逆型，慢响应也单调收敛）：</p>
+<div class="eqwrap">$$ \Delta u_{ff}^{\,j}=\eta\,(G^\top Q\,G+W)^{-1}G^\top Q\,e_j,\qquad u_{ff}^{\,j+1}=u_{ff}^{\,j}+\Delta u_{ff}^{\,j} $$</div>
+<h4>实测能量李雅普诺夫门（不是作弊的 oracle）</h4>
+<p>批次能量 \(V_j=\sum_t e_j(t)^\top Q\,e_j(t)\) 当作批次域李雅普诺夫函数。<b>用实测的</b> \(V_j\) 与上一批比较：</p>
+<div class="eqwrap">$$ \text{若}\ V_j>(1+\text{tol})\,V_{j-1}\ \Rightarrow\ \text{回退本次更新} + \text{降学习率}\ \eta $$</div>
+<div class="callout ok"><b>关键修正。</b> 早期的门用模型自预测 \(\|e-G\Delta u\|^2\)（范数最优必然预测下降 → 形同虚设）。
+改成<b>实测批次能量门</b>后，注入气体大扰动的异常批次会让测到的 \(V_j\) 跳变 ~7×，门<b>自己</b>识别并回退，第二炉接着收敛 —— 全程无外部标志位。批次误差能量降幅 99%。</div>
+
+<!-- ===================== 12. CALIB ===================== -->
+<h2 id="calib">12. TC-wafer 软测量偏置标定 <span class="tag off">每配方</span></h2>
+<p>问题：MPC 控的是<b>不可测</b>的软测量 \(\hat z\)，稳态精度被模型 \(y\to z\) 精度限制，每区残留 ~1.5℃ 偏置（分区不均）。
+解法（concept §11 的"仪器晶圆资格认证"）：用一片<b>仪器晶圆测真实 \(z\)</b>，学每区偏置，再让 MPC 跟踪 \(r-b\)，使<b>真实晶圆</b>（而非估计）落在目标上：</p>
+<div class="eqwrap">$$ b=\operatorname{mean}_{\text{late soak}}(z_{\text{true}}-\hat z),\qquad \text{MPC 跟踪}\ r-b $$</div>
+<div class="callout ok"><b>效果。</b> MPC soak 分区均匀性 <b>1.47℃ → 0.28℃</b>（≈ PID 的 0.15℃），同时保留全部动态优势。残差是"批次重复"的，可再交给 ILC/APC 进一步抹平。</div>
+
+<!-- ===================== 13. LOOP ===================== -->
+<h2 id="loop">13. 闭环编排 <span class="tag on">在线</span></h2>
+<p><span class="file">closed_loop.py</span> 把 真炉 + 观测器 + 控制器 串起来，处理所有坐标换算。每步：</p>
+<pre><code><span class="k">for</span> k <span class="k">in</span> range(N):
+    y_meas, _, z_true = furnace.measure(u_prev, d_now)      <span class="c"># 测量（含噪）</span>
+    x_hat, delta_hat, z_hat = obs.update(y_meas-y_op,        <span class="c"># 观测：x̂, δ̂, ẑ</span>
+                                         u_prev-u_op, d_now)
+    d_prev   = preview(...)                                  <span class="c"># 扰动预览（按类别）</span>
+    x_term,_ = target_calculator(model, Bd, r-bias-z_op, ...)<span class="c"># 无静差目标</span>
+    u_mpc, info = mpc.solve(x_hat, delta_hat, u_mpc_prev,    <span class="c"># 解 MPC</span>
+                            r_preview-bias, d_prev, x_term)
+    u_total = clip(u_mpc + u_ilc[k], 0, 100)                 <span class="c"># u = u_MPC + u_ILC</span>
+    furnace.step(u_total, d_now)                             <span class="c"># 作用到真炉</span>
+    u_prev = u_total            <span class="c"># 观测器看到总功率</span>
+    u_mpc_prev = u_mpc          <span class="c"># MPC 的 Δu 参考是它自己</span></code></pre>
+<p class="small">起始把炉子置于 standby 平衡态、预热观测器，使估计在配方开始前已收敛。</p>
+
+<!-- ===================== 14. SCENARIOS ===================== -->
+<h2 id="scenarios">14. 六个验证场景</h2>
+<table>
+<tr><th>场景</th><th>concept 章节</th><th>验证什么</th><th>关键结果</th></tr>
+<tr><td><b>s1</b> 系统辨识</td><td>§5–6</td><td>最小二乘辨识模型 + \(E\)，ERA 降阶</td><td>自由仿真 VAF 99.8%</td></tr>
+<tr><td><b>s2</b> 跟踪 vs PID</td><td>§1,§10</td><td>MPC 跟踪、无静差、约束、软测量</td><td>升温 RMS 3.2 vs 43.6；Spike 守住</td></tr>
+<tr><td><b>s3</b> 扰动抑制</td><td>§2,§8</td><td>可测+预览前馈降扰动峰值</td><td>峰值 6.7(预览) vs 35.6(PID)</td></tr>
+<tr><td><b>s4</b> 李雅普诺夫</td><td>§3–5,§7</td><td>终端证书、观测器 Schur、\(V_k\) 下降+ISS</td><td>未预览气体使 \(V\) 跳 28× 后回落</td></tr>
+<tr><td><b>s5</b> 批次 ILC</td><td>§6</td><td>批次误差单调降、实测能量门拦坏批</td><td>降 99%，异常批被门回退</td></tr>
+<tr><td><b>s6</b> 集成律</td><td>§10</td><td>\(u_{MPC}+u_{ILC}\) 单回路协同</td><td>在 MPC 上再降 17.6%</td></tr>
+</table>
+<p class="small">运行：<code>python scenarios/run_all.py</code> → <code>figures/</code> 八张图 + <code>REPORT.md</code>。</p>
+
+<!-- ===================== 15. CAVEATS ===================== -->
+<h2 id="caveats">15. 设计决策与诚实局限</h2>
+<ul>
+<li><b>真值是线性 15 态</b>：真实炉子轻度非线性、温变；相对结论（MPC/PID、观测器、李雅普诺夫、ILC）稳健，绝对数字是示意。</li>
+<li><b>所有稳定性证书在辨识模型上</b>；真对象稳定性仅经验验证。终端权是稳定化罚而非严格 CLF（Δu 代价需速度型权）。</li>
+<li><b>未测扰动取"可观的功率亏损"</b>；纯负载侧扰动几乎不可观 —— 软测量的真实极限（靠仪器晶圆/ILC 处理）。</li>
+<li><b>软测量稳态残差</b>用 TC-wafer 标定补回（§12）；这是不可测变量的固有约束，不是 MPC 的失败。</li>
+<li><b>仿真便利</b>：起始置于真平衡态、工作点取自真模型；真硬件靠资格认证运行，观测器从冷态收敛。</li>
+<li><b>统一 \(T_s=2\,\text{s}\)</b>（在 concept 推荐的 2–5 s MPC 区间内）；底层安全/功率执行应更高频。</li>
+</ul>
+
+<div class="footer">
+立式炉 MIMO-MPC 先进控制验证 · 源码 <span class="file">furnace_sim/</span> + <span class="file">scenarios/</span> ·
+完整结论见 <code>REPORT.md</code> · 设计规格见 <code>docs/superpowers/specs/</code><br>
+公式渲染用 MathJax（需联网）；代码引用均对应仓库实际文件/函数名。
+</div>
+</main>
+</div>
+
+<script>
+// TOC 高亮当前章节
+const links = [...document.querySelectorAll('nav a[href^="#"]')];
+const map = {};
+links.forEach(a=>{const id=a.getAttribute('href').slice(1);const el=document.getElementById(id);if(el)map[id]=a;});
+const obs = new IntersectionObserver((es)=>{
+  es.forEach(e=>{ if(e.isIntersecting){ links.forEach(l=>l.classList.remove('active'));
+    const a=map[e.target.id]; if(a)a.classList.add('active'); } });
+},{rootMargin:'-10% 0px -80% 0px',threshold:0});
+Object.keys(map).forEach(id=>{const el=document.getElementById(id);if(el)obs.observe(el);});
+</script>
+</body>
+</html>
