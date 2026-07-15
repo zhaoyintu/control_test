@@ -9,12 +9,23 @@
      [4] nDeadSteps 越界保护 (aVDelay 上限 [0..31], lrTheta 最大 0.31s)
      [5] 表单调性开机自检: 不单调 => xError 并退化为直通 (等价现行无表版, 不会失控)
      [6] 使能时 lrRV1 从 lrPV 起步 (原为 lrSV): 带着偏差投入时按 wr 平滑逼近, 无瞬间阶跃
+     [7] 可选 lrTauF (默认 0=关闭, 行为与旧版逐拍一致): FIFO 出口加一阶滤波, 让 ESO 的
+         对象模型含元件热惯性 τe -- 冲刺时 z2 不再把"元件还没烧起来"记成扰动假账, 刹车准。
+         启用时 nDeadSteps 只补纯滞后 (12), 惯性由 lrTauF 补 (0.24)
    附带: FC_InterpLookup / FC_InterpInverse 两个函数 (工程里若已有同名实现, 删掉本文件中的即可)
 
    参数档位 (孪生 v2 仿真, 100→400):
      第1档(起步): lrWc=1.0  lrWo=12.0  lrWr=3.0  nDeadSteps=31   预期 2.7s/0°/5.4s, 全应力干净
+                  [7-15 下午真机验证: 上升 2.1~2.9s / 超调 1~2.9° / settle 5.2~6.4s, 回放 RMSE 1.1% -- 通过]
      第2档(主推): lrWc=1.5  lrWo=8.0   lrWr=3.0  nDeadSteps=24   预期 2.0s/0.9°/4.2s
      第1档实测与预期吻合 (±20%) 再上第2档; 振铃或超调>2° => wc 退 1.2 或回第1档
+     [警示: 7-15 下午实测 wc=2.0/wr=4 (跳过档位) => 超调 12~15°C -- 正是应力仿真预言的滞后角行为]
+
+   第3档 (可选升级, 目标 "到达400≤3s 且超调≤2°"): 需启用 lrTauF (ESO 元件惯性模型, 见 [7])
+     lrWc=1.5  lrWo=10.0  lrWr=3.5  nDeadSteps=12  lrTauF=0.24  lrMVMax=60
+     预期(当日状态校准良好): 到达 2.8s / 超调 1.2° / 进±2°带 2.6s
+     注意: 机器状态漂移 ±10~15% 时超调可到 4~7° -- "任何日子都≤2°"与"3s到达"物理上不可兼得,
+     原因是刹车滑行 = 进弯速度×(θ+τe), 速度越高对滞后知识的精度要求越苛刻。
    ===================================================================== *)
 
 FUNCTION FC_InterpLookup : LREAL
@@ -115,7 +126,10 @@ VAR_INPUT
     lrWr       : LREAL := 3.0;    // reference-shaping bandwidth (rad/s)
 
     nDeadSteps : DINT := 31;      // 死区+元件惯性补偿拍数 = lrTheta/Ts -- 第1档 31 / 第2档 24
-                                  // (上行纯滞后实测 0.12s, 元件热惯性 τe≈0.24s 一并补偿)
+                                  // (上行纯滞后实测 0.12s, 元件热惯性 τe≈0.24s 一并补偿;
+                                  //  启用 lrTauF 后只补纯滞后: 第3档 12)
+    lrTauF     : LREAL := 0.0;    // ESO 元件惯性模型时间常数 [s]; 0=关闭(与旧版行为一致);
+                                  // 第3档启用: 0.24 (实测 τe)
     nMapPoints : DINT := 9;       // breakpoints actually used in aMapU/aMapV
     // q∞ 实测表 (2026-07-15): MV% -> 稳态加热马力 [°C/s]。65% 以上平坦是实测特性。
     // 85% 点与 70% 实测同值(335), 平段会让反查病态, 已并入 70-100 直线段。
@@ -151,6 +165,7 @@ VAR
     lrUCmd     : LREAL;
     lrVApplied : LREAL;
     lrVDelayed : LREAL;
+    lrVFilt    : LREAL;                   // lrTauF>0 时: FIFO 出口一阶滤波状态 (ESO 惯性模型)
     nSteps     : DINT;                    // nDeadSteps 越界保护后的实际拍数
 
     i : DINT;
@@ -174,6 +189,7 @@ IF xEnable THEN
         FOR i := 0 TO 31 DO
             aVDelay[i] := FC_InterpLookup(aMapU, aMapV, nMapPoints, 0.0);
         END_FOR
+        lrVFilt := aVDelay[0];
         lrZ1  := lrPV;
         lrZ2  := 0.0;
         lrRV1 := lrPV;    // 从当前温度起步: 带偏差投入时按 lrWr 平滑逼近 SV, 无瞬间阶跃
@@ -209,6 +225,12 @@ ELSE
     // Uses the delayed v (nSteps old), not the just-committed one -- this is what
     // "vanilla ADRC applied to a plant with known dead time" should actually do.
     lrVDelayed := aVDelay[nSteps];
+    IF lrTauF > 0.0 THEN
+        // [7] ESO 对象模型升级: 纯滞后之外再含一阶元件惯性 τe,
+        //     冲刺/刹车时 z2 不再把元件的爬升/放热记成扰动假账
+        lrVFilt := lrVFilt + lrCycleT * (lrVDelayed - lrVFilt) / lrTauF;
+        lrVDelayed := lrVFilt;
+    END_IF
     lrErrO := lrPV - lrZ1;
     lrZ1 := lrZ1 + lrCycleT * (lrZ2 + lrB0*lrVDelayed + 2.0*lrWo*lrErrO);
     lrZ2 := lrZ2 + lrCycleT * (lrWo*lrWo*lrErrO);
