@@ -140,7 +140,7 @@ VAR_INPUT
                                   //  启用 lrTauF 后只补纯滞后: 第3档 12)
     lrTauF     : LREAL := 0.0;    // ESO 元件惯性模型时间常数 [s]; 0=关闭(与旧版行为一致);
                                   // 第3档启用: 0.24 (实测 τe)
-    lrKqHot    : LREAL := 0.0;    // [8] 记账温度修正斜率 (每100°C); 0=关闭; 投用 1.1
+    lrKqHot    : LREAL := 1.1;    // [8] 记账温度修正斜率 (每100°C); 0=关闭; 投用 1.1
     lrKqTref   : LREAL := 315.0;  // [8] 缩水起始温度 [°C]
     nMapPoints : DINT := 9;       // breakpoints actually used in aMapU/aMapV
     // q∞ 实测表 (2026-07-15): MV% -> 稳态加热马力 [°C/s]。65% 以上平坦是实测特性。

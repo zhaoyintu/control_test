@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>温控 ADRC 整定方法论 · 移植手册</title>
+<style>
+:root {
+  --paper:#faf9f7; --card:#ffffff; --ink:#1f2430; --muted:#5b6472;
+  --line:#e4e2dd; --code-bg:#f1f0ec;
+  --mv:#1d4ed8; --pv:#c2410c;
+  --warn-bg:#fdf3dd; --warn-bd:#d97706; --warn-ink:#7c4a03;
+  --ok-bg:#eaf5ec; --ok-bd:#15803d;
+  --info-bg:#eef2fb; --info-bd:#1d4ed8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#14161a; --card:#1c1f26; --ink:#e8e6e1; --muted:#9aa1ad;
+    --line:#2a2e37; --code-bg:#22262e;
+    --mv:#7da3f5; --pv:#f0824a;
+    --warn-bg:#2b2214; --warn-bd:#d97706; --warn-ink:#f5c37a;
+    --ok-bg:#16241a; --ok-bd:#3fae63;
+    --info-bg:#1a2233; --info-bd:#7da3f5;
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--paper); color: var(--ink);
+  font: 16px/1.75 -apple-system, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  padding: 0 16px 80px; }
+main { max-width: 900px; margin: 0 auto; }
+code, pre { font-family: Consolas, "SF Mono", Menlo, monospace; }
+code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+      padding: 13px 15px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+pre code { background: none; padding: 0; }
+header { padding: 40px 0 18px; border-bottom: 2px solid var(--ink); margin-bottom: 6px; }
+.kicker { font-size: 13px; letter-spacing: .18em; color: var(--muted); }
+h1 { font-size: 29px; line-height: 1.3; margin: 6px 0 10px; }
+.sub { color: var(--muted); max-width: 64ch; }
+h2 { font-size: 20px; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+h2 .no { color: var(--pv); font-family: Consolas, monospace; margin-right: 8px; font-size: 17px; }
+h3 { font-size: 16px; margin: 20px 0 8px; }
+p { margin: 9px 0; max-width: 74ch; }
+li { margin: 5px 0; }
+ul, ol { padding-left: 24px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; white-space: nowrap; }
+td.num { font-family: Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl-wrap { overflow-x: auto; }
+.box { border-radius: 10px; padding: 12px 17px; margin: 14px 0; border: 1px solid var(--line); }
+.box.warn { background: var(--warn-bg); border-left: 4px solid var(--warn-bd); }
+.box.warn b:first-child { color: var(--warn-ink); }
+.box.ok { background: var(--ok-bg); border-left: 4px solid var(--ok-bd); }
+.box.info { background: var(--info-bg); border-left: 4px solid var(--info-bd); }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px 18px 12px; margin: 12px 0; display: grid;
+        grid-template-columns: 42px 1fr; gap: 3px 13px; }
+.step .n { grid-row: span 3; width: 32px; height: 32px; border-radius: 50%;
+           background: var(--ink); color: var(--paper); display: flex; align-items: center;
+           justify-content: center; font-weight: 700; font-family: Consolas, monospace; margin-top: 2px; }
+.step h4 { font-size: 15.5px; margin: 2px 0; }
+.step .expect { color: var(--muted); font-size: 14px; }
+.step .expect b { color: var(--ink); }
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0;
+        font-size: 14px; font-weight: 600; }
+.flow span { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             padding: 5px 11px; }
+.flow em { color: var(--muted); font-style: normal; }
+footer { margin-top: 52px; padding-top: 14px; border-top: 1px solid var(--line);
+         font-size: 13px; color: var(--muted); }
+@media print { body { background: #fff; color: #000; font-size: 12.5px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="kicker">AIC9 项目沉淀 · 面向"拿到一台新温控设备"的工程师</div>
+  <h1>温控 ADRC 整定方法论 —— 移植手册</h1>
+  <p class="sub">把 AIC9 通道 1 上三天的摸索，沉淀成新设备上 <b>1~2 天可执行</b>的流程：
+  一套通用控制代码 + 一套通用工具链 + 每台设备半小时可获取的"参数包"。
+  本手册是路线图与验收关卡；具体操作细节引用两份流程文档执行。</p>
+</header>
+
+<h2><span class="no">00</span>先判定：你的设备适不适用</h2>
+<p>这套方法论针对的对象类别：<b>单输入单输出温控</b>，执行器（加热器）的静态非线性可以测出来，
+主导动态是"纯滞后 + 一阶惯性 + 积分/自衡"，扰动比控制带宽慢。逐条打勾：</p>
+<ul>
+  <li>☐ 一个 MV（加热功率 %）控一个 PV（温度），控制周期 ≤ 主导时间常数的 1/10；</li>
+  <li>☐ 加热器"给多少电出多少热"基本可重复（同 MV 同工况下马力稳定）；</li>
+  <li>☐ 可以做开环 bump 测试（有手动模式、能一步写 MV）；</li>
+  <li>☐ 负载/环境变化比阶跃响应慢（分钟级 vs 秒级）。</li>
+</ul>
+<div class="tbl-wrap"><table>
+  <tr><th>直接套用</th><th>需要改造</th><th>不适用</th></tr>
+  <tr><td>回流焊温区、注塑机筒加热、烘箱、热压板、退火/回火炉、实验炉——即本手册全流程</td>
+      <td>多温区强耦合（每区独立 ADRC + 耦合当扰动通常够；不够再上解耦）；带主动冷却的双向执行器（表做双段）；季节性大环境漂（锚点监控加密）</td>
+      <td>扰动快于可用带宽（强对流冲击、流量骤变主导）；相变负载主导；多变量强耦合必须整体优化的</td></tr>
+</table></div>
+
+<h2><span class="no">01</span>架构：为什么"特调"不可怕</h2>
+<p>方法论的核心是把机器差异<b>压进数据层</b>，代码与工具全厂一份：</p>
+<div class="tbl-wrap"><table>
+  <tr><th>层</th><th>内容</th><th>移植时</th></tr>
+  <tr><td><b>代码（通用）</b></td><td><code>adrc_map_enabled.st</code>：查表线性化 + 死区 FIFO + [7] 执行器惯性模型 lrTauF + [8] 记账温度修正 lrKqHot。无任何设备专用逻辑</td><td class="num">原样复用</td></tr>
+  <tr><td><b>工具链（通用）</b></td><td>判读 <code>theta_from_bump.py</code> / <code>fit_taue.py</code>、回放辨识 <code>replay_identify.py</code>、孪生 <code>twin.py</code>、爬梯扫描</td><td class="num">原样复用</td></tr>
+  <tr><td><b>参数包（每台一份）</b></td><td>q∞ 表、θ/τe、kq/tref、档位参数、安全表、锚点基线</td><td class="num">半小时标定获取</td></tr>
+</table></div>
+<div class="box info"><b>三句分工哲学</b>（设计一切修正时的指南针）：
+<b>表管快非线性</b>（执行器特性，标出来）；<b>z2 管慢漂移</b>（散热、负载、老化，在线估）；
+<b>标定管结构</b>（滞后、惯性、温度依赖——z2 追不上的快速失配必须进模型）。
+任何新修正必须回答一个问题：<b>估错了往哪边错？</b>——只接受"往慢、往不冲"错的设计
+（范例：[8] 只修记账不修反查）。</div>
+
+<h2><span class="no">02</span>移植总览：六步与时间预算</h2>
+<div class="flow">
+  <span>Step 0 安全问卷<br><em>0.5h</em></span> <em>→</em>
+  <span>Step 1 摸底<br><em>1h</em></span> <em>→</em>
+  <span>Step 2 标定<br><em>0.5~1h 真机</em></span> <em>→</em>
+  <span>Step 3 孪生+盲测<br><em>2~4h 分析</em></span> <em>→</em>
+  <span>Step 4 仿真爬梯<br><em>1~2h</em></span> <em>→</em>
+  <span>Step 5 上机爬梯<br><em>1~2h 真机</em></span>
+</div>
+<p>合计 1~2 个工作日（真机占用 2~4 小时）。每一步有<b>验收关卡</b>，不过关不进下一步——
+返工的代价随步骤指数增长（AIC9 的教训：一次没验收的参数下发 = 一场 12° 超调的白测）。</p>
+
+<h2><span class="no">03</span>Step 0 · 安全问卷（书面确认，不许口头）</h2>
+<div class="tbl-wrap"><table>
+  <tr><th>问题</th><th>AIC9 的答案（示例）</th></tr>
+  <tr><td>温度硬上限（瞬时可触）</td><td class="num">500°C</td></tr>
+  <tr><td>驻留规则（多热算"停留"、能停多久）</td><td class="num">&gt;480°C 不超过 1 分钟</td></tr>
+  <tr><td>测试中止线（保守于上限）</td><td class="num">标定流程 450~470°C</td></tr>
+  <tr><td>MV 限幅、超温联锁是否投用</td><td class="num">lrMVMax=60~90；联锁投用</td></tr>
+  <tr><td>设计峰值预算（含超调）</td><td class="num">≤490°C</td></tr>
+</table></div>
+<div class="box warn"><b>教训直录</b>：AIC9 项目按口头信息把红线记成 460°C，按它设计了所有测试预算；
+后来现场直接测到 500 才发现真实上限就是 500。<b>安全边界必须第一天书面确认</b>——
+它定义了标定能覆盖的温区，覆盖不到的温区就是将来"仿真说行、真机打脸"的伏笔。</div>
+
+<h2><span class="no">04</span>Step 1 · 摸底（用现有控制器，不改任何东西）</h2>
+<p>拿现有控制器（哪怕是烂 PID）跑 2~3 个阶跃 + 一段各温度点的稳态保持，存 10ms CSV。看五样：</p>
+<ul>
+  <li><b>自衡还是积分型</b>：恒定 MV 下温度收敛到平衡（自衡）还是持续爬（积分型）——决定 b0 的约定和孪生结构；</li>
+  <li><b>滞后量级</b>：阶跃后 PV 起动前的平台 ≈ θ 的数量级——决定 bump 保持时长设计（保持 ≥ 3~5×(θ+τe) 才能测出 q∞）；</li>
+  <li><b>噪声 σ 与量化</b>：稳态段 PV 的抖动——决定判读阈值和 wo 上限的量级；</li>
+  <li><b>采样质量</b>：时间戳间隔的中位/最大值——15ms 不规则可以忍，100ms 级则先修记录再标定；</li>
+  <li><b>稳态 MV 曲线</b>：各温度稳住需要百分之几——q 表低段的免费锚点 + 各温度平衡点（决定 bump 的 u₀ 预估）。</li>
+</ul>
+<div class="box ok"><b>验收关卡 G1</b>：能写出"对象类别 / θ 量级 / 噪声 σ / 采样 OK / 各温度 u₀ 表"五行摸底纪要。</div>
+
+<h2><span class="no">05</span>Step 2 · 标定 session（半小时真机，产出整个参数包的原料）</h2>
+<p>操作模板直接用两份流程文档改数字：<code>theta_bump_test.html</code>（θ + q 电平扫 + 锚点）、
+<code>taue_high_temp_test.html</code>（高温区 τe，下跳为主）。五条核心纪律（每台设备都一样）：</p>
+<ol>
+  <li><b>稳温永远闭环</b>：到位、稳住、回稳全部交给自动模式；手动只做"冻结 → 数 3~5 秒 → 一步跳变 → 按表计时 → 切回自动"（开环拿不住恒温，物理必然，别跟它较劲）；</li>
+  <li><b>越热越只做下跳</b>：下跳只降温、零超温风险，且刹车问题的主角本来就是放热侧；</li>
+  <li><b>激励必须覆盖工作域</b>——两个维度都要：<b>功率段</b>（低/中/高电平，尤其最高常用段）和<b>温区</b>（一直测到工作温度附近）。AIC9 两次翻车全在"数据边界外推"：高功率段一次、400°C 以上温区一次；</li>
+  <li><b>每拍前基线必须干净</b>：上一拍没回稳就切手动的拍，判读脚本会自动作废——补拍比返工便宜；</li>
+  <li><b>收尾白捡锚点</b>：结束前在工作温度闭环稳 60 秒（正常工况零风险），它是静态一致性与日后老化监控的基准。</li>
+</ol>
+<pre><code>python3 analysis/theta_from_bump.py 标定.csv     # θ、q 断点、稳态锚点、粘贴式 ST 变量表
+python3 analysis/fit_taue.py 标定.csv            # 整段拟合 θ/τe/q∞, 按温度分组 τe(T)</code></pre>
+<div class="box ok"><b>验收关卡 G2</b>：θ 样本极差合格；q 表单调、覆盖到最高常用电平；
+τe 各温区都有 ≥2 个有效下跳拍；工作温度锚点 ≥60s。缺哪拍补哪拍，不用整场重来。</div>
+
+<h2><span class="no">06</span>Step 3 · 数字孪生 + 盲测转正</h2>
+<p>孪生结构固定（<code>twin.py</code>，参数换新即可）：</p>
+<pre><code>MV → 纯滞后 θ → 静态表 q(u) × 高温缩水 g(u,T) → 一阶元件惯性 τe → 净加热 − 散热 h1·(T−c) → 积分 → PV</code></pre>
+<ul>
+  <li><b>q 表填稳态马力 q∞</b>（整段拟合），不要填短窗斜率——响应是"弯"的，短窗会把 τe 误算成马力不足（AIC9 高段被低估 40% 的教训）；</li>
+  <li><b>θ 与 τe 开环不可分</b>（对光滑响应可互换），总滞后由闭环行为锚定——先按开环拟合填，闭环复现不上再调分配；</li>
+  <li><b>转正标准（关卡 G3）</b>：孪生复现一段<b>没参与拟合的闭环数据</b>（不同日期/不同参数最好），
+  关键指标（上升/超调/settle/振铃周期）偏差 ≤20%。复现不了就回 Step 2 补数据，<b>不要带着不合格的孪生进爬梯</b>——
+  AIC9 的 v1 孪生缺 τe 结构，"仿真说 wc=8 没事"直接导致真机全场振荡。</li>
+</ul>
+
+<h2><span class="no">07</span>Step 4 · 仿真爬梯（标称 + 应力，出 2~3 档）</h2>
+<ul>
+  <li>在孪生上扫 wc/wo/wr/nd（模板 <code>ladder_v2_scan.py</code>），<b>每个候选都要过应力角</b>：增益 ±15%、滞后 +30%（数值按该设备的实测日漂调整）；</li>
+  <li>输出 2~3 档：<b>第 1 档</b>求全应力零超调（验证代码和表没填错用）；<b>第 2/3 档</b>按性能目标（到达时间/超调预算）取舍；</li>
+  <li>每一档必须写下<b>预期数字</b>（上升/超调/settle）——没有预期数字的上机测试无法判读；</li>
+  <li>物理上限先算清楚：滑行 ≈ 进弯速度 × (θ+τe)，超调预算 ÷ 滑行系数 = 允许的进弯速度——"要多快"和"能多准"的取舍在仿真里谈妥，别到现场即兴发挥。</li>
+</ul>
+<div class="box ok"><b>验收关卡 G4</b>：档位表（参数 + 预期 + 应力最差值）成文，写进代码文件头。</div>
+
+<h2><span class="no">08</span>Step 5 · 上机爬梯与长期运维</h2>
+<div class="step"><div class="n">1</div>
+  <h4>爬梯纪律</h4>
+  <div class="expect">一次只动一档/一个开关；每档先回归（新功能关闭态应复现旧行为）再开新功能；
+  <b>跳档是事故的头号来源</b>（AIC9：跳过第 2 档直接 wc=2/wr=4 → 12~15° 超调）。</div>
+</div>
+<div class="step"><div class="n">2</div>
+  <h4>每场测试后：回放辨识核对</h4>
+  <div class="expect"><code>python3 analysis/replay_identify.py 数据.csv 阶跃时刻</code> ——
+  用实测 PV 喂控制器方程、比对命令 MV，确认<b>实跑参数 = 下发参数</b>（RMSE &lt;2% 坐实）。
+  "填的和跑的不一样"这类下发事故，靠它一分钟定案。</div>
+</div>
+<div class="step"><div class="n">3</div>
+  <h4>指标 vs 孪生对账</h4>
+  <div class="expect">偏差 ≤20% → 爬下一档；&gt;20% → 停，找差异来源（新机理？状态漂移？），
+  回 Step 2/3 补标——AIC9 的 τe、高温缩水都是这样被"对账"逼出来的。</div>
+</div>
+<div class="step"><div class="n">4</div>
+  <h4>长期运维：把 z2 和锚点当仪表盘</h4>
+  <div class="expect">生产上持续记录 <b>z2 稳态值</b>（≈当前散热负荷：开门是尖峰、放料是台阶、老化是慢漂）；
+  任何"稳住≥30s"的日志段自动出<b>稳态锚点</b>与表对比。判据：偏差 &lt;10% 不动；
+  10~20% 复标 q 表（半小时）；&gt;20% 或超调特性变化 → 连 τe 一起复标。<b>换加热元件/大修必复标</b>。</div>
+</div>
+<div class="box warn"><b>负载与工况的边界要心里有数</b>：标定是"空炉/固定负载"快照。
+放入大热容工件 = 环路增益被稀释（z2 兜底，稳但变慢）；传感器测的是炉温不是料温；
+冷炉体首烧超调偏大属预期（冷壁吸热未建模）——正式评估用热机后的数据。</div>
+
+<h2><span class="no">09</span>工具速查</h2>
+<div class="tbl-wrap"><table>
+  <tr><th>命令</th><th>用途</th></tr>
+  <tr><td><code>python3 analysis/theta_from_bump.py X.csv</code></td><td>标定判读：θ / q 断点 / 锚点 / 粘贴式变量表</td></tr>
+  <tr><td><code>python3 analysis/fit_taue.py X.csv</code></td><td>整段拟合 θ/τe/q∞，按温度分组</td></tr>
+  <tr><td><code>python3 analysis/replay_identify.py X.csv t0</code></td><td>回放辨识真机实跑参数</td></tr>
+  <tr><td><code>python3 analysis/twin_blindtest.py</code></td><td>孪生盲测（改 CASES 为该设备的实测）</td></tr>
+  <tr><td><code>python3 analysis/ladder_v2_scan.py</code></td><td>爬梯扫描模板（标称+应力）</td></tr>
+  <tr><td><code>python3 analysis/ctrl_kq_verify.py</code></td><td>记账温度修正的验证模板</td></tr>
+</table></div>
+
+<h2><span class="no">10</span>十条元教训（比工具更值钱的部分）</h2>
+<ol>
+  <li>标定质量的上限由<b>实验设计</b>决定，不由拟合算法决定——激励覆盖不到的域，模型在那里必然是猜的；</li>
+  <li>"仿真说行、真机打脸"时，第一步是<b>回放辨识</b>排除"参数没下发"，第二步才怀疑模型结构；</li>
+  <li>θ 和 τe 开环不可分；总滞后由闭环锚定。θ 这类"阶梯参数"最小二乘动不了，要网格扫；</li>
+  <li>q 表必须填稳态马力 q∞；短窗斜率会把执行器惯性误记成"马力小"；</li>
+  <li>MV 是零阶保持信号，重采样必须前值保持——线性插值会把阶跃劈碎导致漏检；</li>
+  <li>稳温是闭环的活，手动只做一步跳变；判读要漂移容忍（趋势线判据）；</li>
+  <li>一切修正设计成"估错落安全侧"（慢而不冲）；修记账优于修反查；</li>
+  <li>ESO 的"积分"是 z2：冲刺期账实不符 → z2 记假账 → 刹车吐账 = 超调。看见反常超调先画 z2 轨迹；</li>
+  <li>没有预期数字的测试无法判读；没有验收关卡的流程必然跳档；</li>
+  <li>参数包（表+动态+档位+安全表）与代码分离，一台一份；锚点偏差是复标的闹钟。</li>
+</ol>
+
+<footer>
+  配套文档：<code>theta_bump_test.html</code>（q(u) 标定流程）· <code>taue_high_temp_test.html</code>（高温 τe 流程）·
+  <code>README.md</code>（仿真使用）· <code>adrc_map_enabled.st</code>（通用控制代码，文件头含档位表）<br>
+  本文档为本地文件。2026-07-16 · 源自 AIC9 通道 1 项目（2026-07-13 ~ 07-16）的完整实战沉淀。
+</footer>
+
+</main>
+</body>
+</html>
