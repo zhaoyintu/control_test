@@ -30,9 +30,22 @@ class Twin:
         self.h1 = p['h1']
         self.c = p['c']
         self.sig_n = p.get('sig_n', 0.0)
+        # v3: 高段马力温度缩水 q_eff = q(u)·(1 − kq·s(u)·max(T−tref,0)/100)
+        #     s(u): u<=30% 为 0, u>=60% 为 1, 之间线性 (低段锚点实测无缩水, 90%满幅实测 −18%)
+        self.kq_hot = p.get('kq_hot', 0.0)
+        self.kq_tref = p.get('kq_tref', 150.0)
 
     def q_of(self, u):
         return np.interp(u, self.u_bp, self.q_bp)
+
+    def q_eff(self, u, y):
+        """瞬时马力: 静态表 × 高段温度缩水系数 (kq_hot=0 时退化为 q_of)"""
+        base = float(np.interp(u, self.u_bp, self.q_bp))
+        if self.kq_hot <= 0.0:
+            return base
+        s = min(max((u - 30.0) / 30.0, 0.0), 1.0)
+        g = 1.0 - self.kq_hot * s * max(y - self.kq_tref, 0.0) / 100.0
+        return base * max(g, 0.4)
 
     def u_of_q(self, v):
         return float(np.interp(v, self.q_bp, self.u_bp))
@@ -41,16 +54,24 @@ class Twin:
         return self.u_of_q(self.h1 * (y - self.c))
 
     def open_loop(self, u_seq, y0, qf0=None, dt=DT):
-        """开环仿真: 已知 MV 序列 -> PV 轨迹 (全向量化)"""
+        """开环仿真: 已知 MV 序列 -> PV 轨迹 (kq_hot=0 时全向量化, 否则逐拍)"""
         t = np.arange(len(u_seq)) * dt
         u_d = np.interp(t - self.theta, t, u_seq)          # 纯滞后
-        q_in = self.q_of(u_d)
         a = dt / max(self.tau2, 1e-4)
         qf0 = self.q_of(u_seq[0]) if qf0 is None else qf0
-        qf, _ = lfilter([a], [1, -(1 - a)], q_in, zi=[(1 - a) * qf0])
-        b = dt * self.h1
-        y, _ = lfilter([dt], [1, -(1 - b)], qf + self.h1 * self.c, zi=[(1 - b) * y0])
-        return y
+        if self.kq_hot <= 0.0:
+            q_in = self.q_of(u_d)
+            qf, _ = lfilter([a], [1, -(1 - a)], q_in, zi=[(1 - a) * qf0])
+            b = dt * self.h1
+            y, _ = lfilter([dt], [1, -(1 - b)], qf + self.h1 * self.c, zi=[(1 - b) * y0])
+            return y
+        qf = qf0; y = y0
+        out = np.empty(len(u_seq))
+        for i in range(len(u_seq)):
+            qf += a * (self.q_eff(u_d[i], y) - qf)
+            y += dt * (qf - self.h1 * (y - self.c))
+            out[i] = y
+        return out
 
     def closed_loop_adrc(self, b0, wc, wo, wr, nd, y0, svt, T=18.0, pre=6.0,
                          noise=None, seed=1, mv_max=100.0, dt=DT):
@@ -83,7 +104,7 @@ class Twin:
             ud = uh[i]
             for _ in range(2):
                 h_ = dt / 2
-                qf += h_ * (float(self.q_of(ud)) - qf) / max(self.tau2, 1e-4)
+                qf += h_ * (self.q_eff(float(ud), y) - qf) / max(self.tau2, 1e-4)
                 y += h_ * (qf - self.h1 * (y - self.c))
             yy[i] = y; uu[i] = u
         return yy[n_pre:], uu[n_pre:]
