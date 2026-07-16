@@ -102,7 +102,8 @@ footer { margin-top: 52px; padding-top: 14px; border-top: 1px solid var(--line);
 <ul>
   <li>☐ 10ms CSV 记录开启（<code>time / PV1 / PV2 / SV / MV</code>），覆盖全程；</li>
   <li>☐ 操作台能<b>切手动并一步写入 MV 数值</b>；</li>
-  <li>☐ 超温联锁投用；本流程<b>设计峰值 ≤415°C</b>，红线 460°C，中止线 450°C（见 02）；</li>
+  <li>☐ 超温联锁投用；本流程<b>设计峰值 ≤415°C</b>；设备上限 <b>500°C（瞬时可触、不可驻留，7-16 确认）</b>，
+      本流程按保守中止线 450°C 执行（见 02）；</li>
   <li>☐ 控制器参数用<b>第 1 档</b>（wc=1.0, wo=12, wr=3, nDeadSteps=31, lrTauF=0）——
       测试期间控制器只负责"稳温、回稳"，用最稳的档避免测试自身出波澜；<b>不要用激进档做本测试</b>；</li>
   <li>☐ 秒表或口数节拍；全程有人守台，随时可切回自动。</li>
@@ -113,18 +114,19 @@ footer { margin-top: 52px; padding-top: 14px; border-top: 1px solid var(--line);
 唯一的两种上跳都留足了 45°C 以上的峰值余量。</p>
 <div class="tbl-wrap"><table>
   <tr><th>组</th><th class="num">起点(闭环稳住)</th><th>动作</th><th class="num">保持</th><th class="num">预计峰值</th><th class="num">红线余量</th><th class="num">次数</th></tr>
-  <tr><td>A1</td><td class="num">350°C</td><td>MV 一步 <b>+6%</b></td><td class="num">1.5 s</td><td class="num">≈376°C</td><td class="num">84°</td><td class="num">2</td></tr>
+  <tr><td>A1</td><td class="num">350°C</td><td>MV 一步 <b>+6%</b></td><td class="num">1.5 s</td><td class="num">≈376°C</td><td class="num">124°</td><td class="num">2</td></tr>
   <tr><td>A2</td><td class="num">350°C</td><td>MV 一步 <b>−6%</b></td><td class="num">2.0 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">2</td></tr>
-  <tr><td>B1</td><td class="num">400°C</td><td>MV 一步 <b>+4%</b></td><td class="num">1.0 s</td><td class="num">≈413°C</td><td class="num">47°</td><td class="num">2</td></tr>
+  <tr><td>B1</td><td class="num">400°C</td><td>MV 一步 <b>+4%</b></td><td class="num">1.0 s</td><td class="num">≈413°C</td><td class="num">87°</td><td class="num">2</td></tr>
   <tr><td>B2</td><td class="num">400°C</td><td>MV 一步 <b>−5%</b></td><td class="num">2.0 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">3</td></tr>
   <tr><td>C</td><td class="num">430°C</td><td>MV 一步 <b>−5%</b>（<b>只下跳</b>）</td><td class="num">2.5 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">3</td></tr>
-  <tr><td>收尾</td><td class="num">—</td><td>自动模式 SV=450 稳住（正常工况，补高温锚点）</td><td class="num">≥60 s</td><td class="num">450°C</td><td class="num">10°</td><td class="num">1</td></tr>
+  <tr><td>收尾</td><td class="num">—</td><td>自动模式 SV=450 稳住（正常工况，补高温锚点）</td><td class="num">≥60 s</td><td class="num">450°C</td><td class="num">50°</td><td class="num">1</td></tr>
 </table></div>
 <div class="box warn"><b>三条中止规则</b>
   <ul style="margin-top:4px">
     <li>任何时刻 PV ≥ <b>450°C</b>（收尾锚点段除外）→ 立即切回自动，本拍作废；</li>
     <li>保持计时<b>宁短勿长</b>；跳变必须一步到位，手抖分两步则本拍作废重来；</li>
-    <li>430°C 组<b>严禁上跳</b>（+4% 峰值会到 ~445，距红线不足 15°，不划算——上行 τe 用 350/400 的趋势外推足够）。</li>
+    <li>430°C 组<b>不做上跳</b>（设计时按 460 红线禁止；上限确认 500 后可放宽，但放热侧数据已足够，无必要）。
+    <b>驻留规则：任何温度 &gt;480°C 的段不超过 1 分钟</b>（设备上限 500 为瞬时值，不可久留）。</li>
   </ul>
 </div>
 
@@ -212,8 +214,9 @@ PV 门限限速（存热在 PV 到 380 前早已灌满，门开得太晚）。</
 <ul>
   <li><b>为什么这次以下跳为主？</b>——两个原因叠加：安全上，下跳只降温，物理上不可能超温，越热的组越该用它；
   机理上，440 超调的元凶就是"断油后元件放热"（放热侧 τe），主角本来就是下行。</li>
-  <li><b>为什么 430 不做上跳？</b>——+4% 保持 1s 峰值会摸到 ~445，距红线不足 15°，风险换不来多少信息；
-  上行 τe 在 350/400 两点的趋势足够外推，而且控制上真正用到 430+ 上行马力的场景（冲刺段）早在更低温就减速了。</li>
+  <li><b>为什么 430 不做上跳？</b>——设计时按 460 红线计算余量不足；上限确认为 500 后此禁令可放宽，
+  但上行 τe 在 350/400 两点的趋势足够外推，而且控制上真正用到 430+ 上行马力的场景（冲刺段）早在更低温就减速了，
+  没有必要为它加拍。</li>
   <li><b>起点温度要多准？</b>——不必准。345 或 360 都行，脚本用数据里实测的起点温度；
   重要的是<b>闭环稳住</b>（漂移小）和跳变一步到位。切手动后的缓漂脚本会自动扣除。</li>
   <li><b>为什么测试期间用第 1 档参数？</b>——测试里控制器只干"稳温、回稳"的活，跟性能无关；
