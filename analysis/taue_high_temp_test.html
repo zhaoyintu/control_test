@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>高温 τe(T) 标定 · 完整流程</title>
+<style>
+:root {
+  --paper:#faf9f7; --card:#ffffff; --ink:#1f2430; --muted:#5b6472;
+  --line:#e4e2dd; --code-bg:#f1f0ec;
+  --mv:#1d4ed8; --pv:#c2410c;
+  --warn-bg:#fdf3dd; --warn-bd:#d97706; --warn-ink:#7c4a03;
+  --ok-bg:#eaf5ec; --ok-bd:#15803d;
+  --info-bg:#eef2fb; --info-bd:#1d4ed8;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --paper:#14161a; --card:#1c1f26; --ink:#e8e6e1; --muted:#9aa1ad;
+    --line:#2a2e37; --code-bg:#22262e;
+    --mv:#7da3f5; --pv:#f0824a;
+    --warn-bg:#2b2214; --warn-bd:#d97706; --warn-ink:#f5c37a;
+    --ok-bg:#16241a; --ok-bd:#3fae63;
+    --info-bg:#1a2233; --info-bd:#7da3f5;
+  }
+}
+* { box-sizing: border-box; margin: 0; }
+body { background: var(--paper); color: var(--ink);
+  font: 16px/1.75 -apple-system, "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+  padding: 0 16px 80px; }
+main { max-width: 900px; margin: 0 auto; }
+code, pre { font-family: Consolas, "SF Mono", Menlo, monospace; }
+code { background: var(--code-bg); padding: 1px 6px; border-radius: 4px; font-size: .92em; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+      padding: 13px 15px; overflow-x: auto; font-size: 13px; line-height: 1.55; }
+pre code { background: none; padding: 0; }
+header { padding: 40px 0 18px; border-bottom: 2px solid var(--ink); margin-bottom: 6px; }
+.kicker { font-size: 13px; letter-spacing: .18em; color: var(--muted); }
+h1 { font-size: 29px; line-height: 1.3; margin: 6px 0 10px; }
+.sub { color: var(--muted); max-width: 64ch; }
+h2 { font-size: 20px; margin: 40px 0 12px; padding-top: 16px; border-top: 1px solid var(--line); }
+h2 .no { color: var(--pv); font-family: Consolas, monospace; margin-right: 8px; font-size: 17px; }
+h3 { font-size: 16px; margin: 20px 0 8px; }
+p { margin: 9px 0; max-width: 74ch; }
+li { margin: 5px 0; }
+ul, ol { padding-left: 24px; }
+table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 14.5px; }
+th, td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+th { background: var(--code-bg); font-weight: 600; white-space: nowrap; }
+td.num { font-family: Consolas, monospace; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tbl-wrap { overflow-x: auto; }
+.box { border-radius: 10px; padding: 12px 17px; margin: 14px 0; border: 1px solid var(--line); }
+.box.warn { background: var(--warn-bg); border-left: 4px solid var(--warn-bd); }
+.box.warn b:first-child { color: var(--warn-ink); }
+.box.ok { background: var(--ok-bg); border-left: 4px solid var(--ok-bd); }
+.box.info { background: var(--info-bg); border-left: 4px solid var(--info-bd); }
+.step { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+        padding: 14px 18px 12px; margin: 12px 0; display: grid;
+        grid-template-columns: 42px 1fr; gap: 3px 13px; }
+.step .n { grid-row: span 3; width: 32px; height: 32px; border-radius: 50%;
+           background: var(--ink); color: var(--paper); display: flex; align-items: center;
+           justify-content: center; font-weight: 700; font-family: Consolas, monospace; margin-top: 2px; }
+.step h4 { font-size: 15.5px; margin: 2px 0; }
+.step .expect { color: var(--muted); font-size: 14px; }
+.step .expect b { color: var(--ink); }
+.flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0;
+        font-size: 14px; font-weight: 600; }
+.flow span { background: var(--card); border: 1px solid var(--line); border-radius: 8px;
+             padding: 5px 11px; }
+.flow em { color: var(--muted); font-style: normal; }
+footer { margin-top: 52px; padding-top: 14px; border-top: 1px solid var(--line);
+         font-size: 13px; color: var(--muted); }
+@media print { body { background: #fff; color: #000; font-size: 12.5px; } }
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="kicker">AIC9 温控 · 高温动态补标 · 440+ 目标的地基</div>
+  <h1>高温 τe(T) 标定（350~430°C）—— 完整流程</h1>
+  <p class="sub">一次约 30 分钟的真机测试，产出<b>元件热惯性 τe 随温度的曲线（吸热/放热分开）</b>。
+  它是解决"440 目标超调 10°、峰值贴近红线"的唯一缺失数据：拿到后升级孪生 v3，
+  在 v3 上比较 wr 调度与预整形，440+ 的接近策略才有据可设计。</p>
+</header>
+
+<h2><span class="no">00</span>总览：测什么、为什么、换来什么</h2>
+<div class="flow">
+  <span>高温 bump<br><em>350 / 400 / 430 三组，下跳为主</em></span> <em>→</em>
+  <span>一条命令判读<br><em>fit_taue.py</em></span> <em>→</em>
+  <span>τe(T) 曲线<br><em>上行/下行分开</em></span> <em>→</em>
+  <span>孪生 v3<br><em>复现 440 事故</em></span> <em>→</em>
+  <span>440+ 接近策略<br><em>wr调度 vs 预整形，仿真定</em></span>
+</div>
+<p><b>τe 是什么</b>：MV 给电后加热元件自己先升温、马力按一阶惯性爬上来的时间常数；断电后元件把存的热
+倒出来也是它。低温标定值 0.24s（200~340°C 数据）。</p>
+<div class="box info"><b>为什么必须补这一场</b>：7-15 晚 200→440 实测超调 10.0°、峰值 450（距红线 10°）；
+反推显示 τe 的增长拐点恰在 400°C——<b>正好是上次标定数据的边界</b>（θ/q 标定在 200~300°C 做，峰值最高 ~340）。
+静态没问题（440 稳态锚点偏差仅 −5.4%），缺的只是"元件在高温炉腔里放热变慢"的动态数据。
+旧数据的下跳拍已给出预告：τe 下行恒比上行大 ~0.1s（300°C：0.41 vs 0.31），且随温度增长——本次就是把这条曲线补到 430°C。</div>
+
+<h2><span class="no">01</span>测试前准备</h2>
+<ul>
+  <li>☐ 10ms CSV 记录开启（<code>time / PV1 / PV2 / SV / MV</code>），覆盖全程；</li>
+  <li>☐ 操作台能<b>切手动并一步写入 MV 数值</b>；</li>
+  <li>☐ 超温联锁投用；本流程<b>设计峰值 ≤415°C</b>，红线 460°C，中止线 450°C（见 02）；</li>
+  <li>☐ 控制器参数用<b>第 1 档</b>（wc=1.0, wo=12, wr=3, nDeadSteps=31, lrTauF=0）——
+      测试期间控制器只负责"稳温、回稳"，用最稳的档避免测试自身出波澜；<b>不要用激进档做本测试</b>；</li>
+  <li>☐ 秒表或口数节拍；全程有人守台，随时可切回自动。</li>
+</ul>
+
+<h2><span class="no">02</span>安全设计：每一拍的红线账本</h2>
+<p>本流程的核心安全思路：<b>越热的组，越只做"下跳"</b>——下跳只降温，物理上不可能超温；
+唯一的两种上跳都留足了 45°C 以上的峰值余量。</p>
+<div class="tbl-wrap"><table>
+  <tr><th>组</th><th class="num">起点(闭环稳住)</th><th>动作</th><th class="num">保持</th><th class="num">预计峰值</th><th class="num">红线余量</th><th class="num">次数</th></tr>
+  <tr><td>A1</td><td class="num">350°C</td><td>MV 一步 <b>+6%</b></td><td class="num">1.5 s</td><td class="num">≈376°C</td><td class="num">84°</td><td class="num">2</td></tr>
+  <tr><td>A2</td><td class="num">350°C</td><td>MV 一步 <b>−6%</b></td><td class="num">2.0 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">2</td></tr>
+  <tr><td>B1</td><td class="num">400°C</td><td>MV 一步 <b>+4%</b></td><td class="num">1.0 s</td><td class="num">≈413°C</td><td class="num">47°</td><td class="num">2</td></tr>
+  <tr><td>B2</td><td class="num">400°C</td><td>MV 一步 <b>−5%</b></td><td class="num">2.0 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">3</td></tr>
+  <tr><td>C</td><td class="num">430°C</td><td>MV 一步 <b>−5%</b>（<b>只下跳</b>）</td><td class="num">2.5 s</td><td class="num">只降温</td><td class="num">∞</td><td class="num">3</td></tr>
+  <tr><td>收尾</td><td class="num">—</td><td>自动模式 SV=450 稳住（正常工况，补高温锚点）</td><td class="num">≥60 s</td><td class="num">450°C</td><td class="num">10°</td><td class="num">1</td></tr>
+</table></div>
+<div class="box warn"><b>三条中止规则</b>
+  <ul style="margin-top:4px">
+    <li>任何时刻 PV ≥ <b>450°C</b>（收尾锚点段除外）→ 立即切回自动，本拍作废；</li>
+    <li>保持计时<b>宁短勿长</b>；跳变必须一步到位，手抖分两步则本拍作废重来；</li>
+    <li>430°C 组<b>严禁上跳</b>（+4% 峰值会到 ~445，距红线不足 15°，不划算——上行 τe 用 350/400 的趋势外推足够）。</li>
+  </ul>
+</div>
+
+<h2><span class="no">03</span>操作流程（约 30 分钟）</h2>
+<p>每一拍的节奏和上次 q(u) 标定完全一样：<b>闭环稳温 → 切手动只停 3~5 秒 → 一步跳变、按表计时 →
+切回自动 → 等回稳</b>。稳温永远是闭环（自动模式）的活，手动段只负责"冻结、数三秒、跳"。
+切手动后 PV 缓漂是正常的，判读脚本会扣掉；停超过 ~10 秒反而没好处。</p>
+<div class="step"><div class="n">1</div>
+  <h4>A 组 · 350°C（上跳 ×2，下跳 ×2）</h4>
+  <div class="expect">自动 SV=350 稳住 ≥60s（不必正好 350，345~360 都行，脚本用实测起点），记稳态 MV 为 u₀（预估 ≈15%，以现场为准）。
+  切手动停 3~5s → <b>u₀+6%</b> 保持 1.5s → 切回自动回稳；重复共 2 次。
+  然后同样节奏做 <b>u₀−6%</b> 保持 2.0s ×2（温度会掉 ~20°C，正常）。</div>
+</div>
+<div class="step"><div class="n">2</div>
+  <h4>B 组 · 400°C（上跳 ×2，下跳 ×3——下跳是主角）</h4>
+  <div class="expect">自动 SV=400 稳住 ≥60s，记 u₀（预估 ≈18~19%）。<b>u₀+4%</b> 保持 1.0s ×2（峰 ≈413）；
+  <b>u₀−5%</b> 保持 2.0s ×3。440 超调的机理就是"放热侧的 τe"，所以下跳多做一次。</div>
+</div>
+<div class="step"><div class="n">3</div>
+  <h4>C 组 · 430°C（只下跳 ×3）</h4>
+  <div class="expect">自动 SV=430 稳住 ≥60s，记 u₀（预估 ≈19~20%）。<b>u₀−5%</b> 保持 2.5s ×3，
+  每次温度掉到 ~410 再切回自动拉回。这组给出最接近工作温度的放热 τe——全流程最值钱的三拍。</div>
+</div>
+<div class="step"><div class="n">4</div>
+  <h4>收尾 · 450°C 锚点（纯闭环，零操作）</h4>
+  <div class="expect">自动模式 SV=450，稳满 <b>≥60s</b> 后停止记录。这段同时补上一直欠着的高温静态锚点
+  （脚本自动识别"稳住≥30s"的段并与 q 表对比）。</div>
+</div>
+
+<h2><span class="no">04</span>数据判读：一条命令</h2>
+<pre><code>python3 analysis/fit_taue.py 你的文件.csv</code></pre>
+<p>脚本自动识别所有手动 bump（上跳/下跳都收），对每拍做<b>整段拟合</b>把三个量分开：
+θ（纯滞后）、τe（元件惯性）、q∞（稳态马力）——不再用"起动斜率法"，因为响应是弯的，
+短窗斜率会把 τe 误算进马力。输出长这样（数字为示意）：</p>
+<pre><code> #    t0[s]  T0[°C]      MV: 前->后   方向  保持[s]   θ[s]  τe[s]      q∞  备注
+ 1    182.4   350.2  15.1->  21.1    上     1.51   0.10   0.34    48.9
+ 2    311.0   350.1  15.0->   9.0    下     2.02   0.14   0.46    12.3
+ ...
+ 7    905.7   400.3  18.6->  23.6    上     1.00   0.10   0.40    55.0  保持短,τe/q∞联合不确定
+ 8   1013.2   400.1  18.5->  13.5    下     2.01   0.16   0.53    15.8
+ ...
+12   1544.8   430.0  19.8->  14.8    下     2.50   0.18   0.60    17.4
+
+τe(T) 汇总 (温度分组中位数):
+         T区间   n    τe上行    τe下行
+  350~ 350°   4    0.34    0.46
+  400~ 400°   5    0.40    0.53
+  430~ 430°   3      —     0.60
+
+==> τe(T) ≈ 0.28 + 0.22·max(T-300,0)/100   (粗拟合, 供孪生 v3 与高温接近策略设计用)</code></pre>
+<p>判读要点：<b>"作废"行是正常现象</b>（上一拍没回稳就切手动、或基线弯折的拍会自动剔除，补测该拍即可）；
+标"τe触界,弃用"或"残差大"的拍不进汇总；上跳保持只有 1.0s 的拍会提示"τe/q∞联合不确定"——
+它对 τe 趋势仍有参考价值，定量以下跳（2s+ 保持）为准。</p>
+<div class="box ok"><b>工具已验证</b>：在 7-15 深夜标定数据上回测，300°C 上行 τe=0.30~0.32（与整段拟合基准一致）、
+下行 0.41；200°C 上行 0.23、下行 0.34——方向差和温度趋势清晰可测，方法学成立。</div>
+
+<h2><span class="no">05</span>数据怎么用：三个落点</h2>
+<h3>落点① 孪生 v3</h3>
+<p>τe(T) 曲线（含上下行不对称）写入 <code>analysis/twin_params.json</code>，
+第一件事是<b>复现 7-15 晚的 440 事故</b>（200→440 超调 10°）——复现成功孪生才算转正，
+之后所有高温策略先在 v3 上过，再上机。</p>
+<h3>落点② 440+ 接近策略的设计决策（本次测试的最终目的）</h3>
+<p>在 v3 上同台比较三个候选，按下表打分后定一个上机：</p>
+<div class="tbl-wrap"><table>
+  <tr><th>候选</th><th>原理</th><th>代码量</th><th>预期取舍</th></tr>
+  <tr><td><b>SV 分段</b>（现行过渡）</td><td>440 前先在 425 稳一站，末段幅度小、进弯慢</td><td class="num">0 行</td><td>最稳但全程最慢，需人工/程序分两步</td></tr>
+  <tr><td><b>wr 按目标调度</b></td><td>SV&gt;400 时参考轨迹自动放缓（wr_eff≈2.2）</td><td class="num">~3 行</td><td>一步到位，440 到达 ~4s，超调可控</td></tr>
+  <tr><td><b>剩余距离限速包络</b></td><td>v 指令 ≤ k·(SV−PV)，接近速度随剩余距离收敛</td><td class="num">~3 行</td><td>比 PV 门限早介入；k 由 τe(T) 定，需 v3 验证</td></tr>
+</table></div>
+<p>已被仿真排除的两条路（不再走）：lrTauF 高温调大（ESO 记账滞后反而更晚刹车）、
+PV 门限限速（存热在 PV 到 380 前早已灌满，门开得太晚）。</p>
+<h3>落点③ 文档与参数固化</h3>
+<p>上下行 θ/τe 不对称写入孪生与代码注释；<b>本次测试不改控制器任何参数</b>——纯数据采集，
+400°C 目标的第 1/3 档参数照常使用。</p>
+
+<h2><span class="no">06</span>验收：这次算成功的标准</h2>
+<ul>
+  <li>350 / 400 / 430 三组各有 <b>≥2 个有效下跳拍</b>（无作废、无触界），350/400 另各有 ≥1 个有效上跳拍；</li>
+  <li>τe(T) 汇总表三行齐全，下行 τe 随温度单调不减（若不单调，补测对应组一拍）；</li>
+  <li>450°C 锚点段 ≥60s；</li>
+  <li>CSV 发回 → 孪生 v3 复现 440 事故（超调预测 10°±3°）→ 通过后进入落点②的策略仿真。</li>
+</ul>
+
+<h2><span class="no">07</span>四个常见疑问</h2>
+<ul>
+  <li><b>为什么这次以下跳为主？</b>——两个原因叠加：安全上，下跳只降温，物理上不可能超温，越热的组越该用它；
+  机理上，440 超调的元凶就是"断油后元件放热"（放热侧 τe），主角本来就是下行。</li>
+  <li><b>为什么 430 不做上跳？</b>——+4% 保持 1s 峰值会摸到 ~445，距红线不足 15°，风险换不来多少信息；
+  上行 τe 在 350/400 两点的趋势足够外推，而且控制上真正用到 430+ 上行马力的场景（冲刺段）早在更低温就减速了。</li>
+  <li><b>起点温度要多准？</b>——不必准。345 或 360 都行，脚本用数据里实测的起点温度；
+  重要的是<b>闭环稳住</b>（漂移小）和跳变一步到位。切手动后的缓漂脚本会自动扣除。</li>
+  <li><b>为什么测试期间用第 1 档参数？</b>——测试里控制器只干"稳温、回稳"的活，跟性能无关；
+  用最稳的档位，保证每一拍的基线干净、回稳快，测试效率反而最高。</li>
+</ul>
+
+<footer>
+  关联文件：<code>analysis/fit_taue.py</code>（判读）· <code>analysis/twin.py</code> + <code>twin_params.json</code>（孪生）·
+  前置文档 <code>analysis/theta_bump_test.html</code>（q(u) 标定，方法学总纲）<br>
+  本文档为本地文件。2026-07-15 · 背景：7-15 晚 200→440 实测超调 10°，τe 拐点反推在 400°C，标定数据边界 340°C。
+</footer>
+
+</main>
+</body>
+</html>
