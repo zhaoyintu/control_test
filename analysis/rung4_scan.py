@@ -87,8 +87,11 @@ def bang_bang_floor(tvp, mv, y0, svt, ov_budget=3.0):
 
 
 def cl(tvc, tvp, wc, wo, wr, nd, tauf, mv_max, y0, svt, ckq=KQ_REAL, ctref=315.0,
-       fw=0.0, T=14.0, pre=3.0, seed=1):
-    """闭环: 控制器 (tvc 的表 + ckq 记账) vs 对象 (tvp 物理 + fw 偷热), 返回 (yy, uu) 阶跃后段"""
+       fw=0.0, T=14.0, pre=3.0, seed=1, kd=0.0):
+    """闭环: 控制器 (tvc 的表 + ckq 记账) vs 对象 (tvp 物理 + fw 偷热), 返回 (yy, uu) 阶跃后段
+       kd: v 空间速度阻尼 (7-17 晚新增)。vc = wc·(v1−z1) − z2 − kd·(vd+z2);
+       vd+z2 即 ESO 的 PV 速度估计 (ż1 的模型部分), 免微分免噪声。
+       wr=30 (参考≈阶跃) 时必须 kd>0: 无阻尼环路是 ζ=1/(2√(wc·τ)) 的欠阻尼二阶。"""
     n_pre = int(pre / DT)
     N = n_pre + int(T / DT)
     nd_p = max(1, int(round(tvp.theta / DT)))
@@ -118,7 +121,7 @@ def cl(tvc, tvp, wc, wo, wr, nd, tauf, mv_max, y0, svt, ckq=KQ_REAL, ctref=315.0
         err = ym - z1
         z1 = z1 + DT * (z2 + vd + 2 * wo * err)
         z2 = z2 + DT * (wo * wo * err)
-        vc = min(max(wc * (v1 - z1) - z2, 0.0), v_hi)
+        vc = min(max(wc * (v1 - z1) - z2 - kd * (vd + z2), 0.0), v_hi)
         u = min(max(float(np.interp(vc, tvc.q_bp, tvc.u_bp)), 0.0), mv_max)
         va = float(tvc.q_of(u))
         if ckq > 0 and ym > ctref and u > 30.0:
