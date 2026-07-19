@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>孪生 v4 墙参数采集场——机上执行流程（2026-07-19 制定）</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; max-width: 880px; margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.65; }
+  h1 { font-size: 1.45em; border-bottom: 3px solid #1f77b4; padding-bottom: 8px; }
+  h2 { font-size: 1.15em; margin-top: 1.6em; border-left: 5px solid #1f77b4; padding-left: 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.95em; }
+  th, td { border: 1px solid #bbb; padding: 6px 10px; text-align: left; }
+  th { background: #eef4fa; }
+  .red { background: #fdecec; border: 1px solid #e08080; padding: 10px 14px; border-radius: 6px; }
+  .why { color: #555; font-size: 0.92em; }
+  .step { background: #f6f8f9; border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; margin: 10px 0; }
+  code { background: #f0f0f0; padding: 1px 5px; border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<h1>孪生 v4 墙参数采集场——机上执行流程</h1>
+
+<p><b>目的</b>：解锁墙（炉体）慢参数。7-19 的数据把"免费刹车 = 0.0836×(腔温−墙温)"的快物理定住了，
+但墙的<b>充放时间常数</b>在 ≤60s 的窗口里辨识不出来——这正是"同一 kd 早上冲透晚上爬行"的根源。
+本场专喂慢参数；过关后才做自适应刹车设计（自动读墙态，免按靶点换 kd）。</p>
+
+<div class="red"><b>红线（照旧）</b>：设备上限 500°C 瞬时可触、不可驻留（>480°C 段勿超 1 分钟）。
+本场最高只到 440，无越线动作。全程<b>空炉、不开门</b>（墙参数要纯净数据）。</div>
+
+<h2>一、通用规程修正（本场起全部测试适用）</h2>
+<div class="step">
+<b>阶跃前必须在起点温度闭环稳住 ≥15 秒再跳变。</b>
+<div class="why">为什么：7-19 晚场的 100→200 测试是 0→100→200 连发（间隔仅 2~5s），
+元件带着预热起跑，首超 8~18° 里有相当部分是这个造成的，数据没法和干净起跑对比。</div>
+</div>
+
+<h2>二、采集序列（总时长约 90 分钟 + 可选隔夜段）</h2>
+<p class="why">每段末尾标注了它喂哪个参数。CSV 记录保持 10ms 全程连续，不要分段停录。</p>
+
+<table>
+<tr><th>#</th><th>动作</th><th>时长</th><th>喂什么</th></tr>
+<tr><td>1</td><td><b>冷炉起步</b>（停机 ≥2 小时后开始最好）。记录当前室温（人工记一下即可）</td><td>—</td><td>环境温度 amb 锚点</td></tr>
+<tr><td>2</td><td>闭环升到 400（第1档或第4档均可），<b>保温 ≥60s</b></td><td>~2min</td><td>冷墙态保温功率锚点 ①</td></tr>
+<tr><td>3</td><td>SV=0（MV 归零），<b>自由降温 ≥10 分钟</b>，期间不做任何操作</td><td>10min</td><td>慢参数主菜：冷墙起点长降温</td></tr>
+<tr><td>4</td><td>连续 4 次 100→440 往返（每次 440 保温 20s，回 100 稳 15s 再跳），把墙烤热</td><td>~12min</td><td>墙充热过程 + kd=0.85/1.05 顺带复测</td></tr>
+<tr><td>5</td><td>400 <b>保温 ≥60s</b> → 300 保温 ≥60s → 200 保温 ≥60s（逐级降，各稳完再降）</td><td>~5min</td><td>热墙态保温功率锚点 ②③④（对照 #2 同温不同墙态）</td></tr>
+<tr><td>6</td><td>SV=0，<b>自由降温 ≥10 分钟</b></td><td>10min</td><td>慢参数主菜：热墙起点长降温（与 #3 对照）</td></tr>
+<tr><td>7</td><td>再升 400 保温 60s → SV=0 降温 5 分钟（快速加测一组中间墙态）</td><td>~7min</td><td>中间墙态锚点 + 降温段 ③</td></tr>
+<tr><td>8</td><td><b>可选加分项</b>：下班前升到 400，SV=0 后<b>让记录仪继续记 ≥30 分钟</b>（能记隔夜最好）</td><td>0 人工</td><td>墙对环境放热的完整时间常数（一锤定音）</td></tr>
+</table>
+
+<h2>三、判读与关卡（数据回来后，分析侧执行）</h2>
+<table>
+<tr><th>关卡</th><th>内容</th><th>过关标准</th></tr>
+<tr><td>G1</td><td>慢参数辨识（#3/#6/#7/#8 长降温 + 双墙态保温锚点联合拟合）</td><td>墙观测器长程积分 与 各降温段独立拟合墙温 一致（±15°C）</td></tr>
+<tr><td>G2</td><td>q 表按真散热重标（s_lo/s_hi）+ 高段缩水并入 v4</td><td>加热窗回放 RMSE ≤3°C</td></tr>
+<tr><td>G3</td><td><b>闭环复现关卡</b>：7-19 两场 13 个 kd 测试重仿真</td><td>冲透/爬行方向 13/13 全对，首超误差 ≤2°C</td></tr>
+<tr><td>G4</td><td>自适应刹车设计（墙观测器→刹车预算→kd 自适应 或 停车距离保护，单一律无状态机），全状态网格扫描（墙温×靶点×增益漂移）</td><td>最坏首超 ≤3~4° 且失败方向=偏慢；写成 [10]，默认关闭</td></tr>
+<tr><td>G5</td><td>上机验证：重复 7-19 拨盘扫描流程，但用自适应版<b>一组参数</b>跑全部工况</td><td>200/400/440 × 冷/热墙 全部 首超≤3~4°、到达距各自物理地板 ≤0.3s</td></tr>
+</table>
+
+<p class="why">G3 是不可妥协的一关：模型复现不了真机，就不配用来设计控制器（7-17 的 kd 轴偏 1.5× 教训）。
+G5 通过即宣告"按靶点换 kd"退役；之后进入辨识配方自动化阶段（把 bump 场判读、降温段判读、
+各关卡全部脚本化——新机器接上自动出参数包）。</p>
+
+<h2>四、等待期间可立即采用的（零风险）</h2>
+<table>
+<tr><th>项</th><th>内容</th></tr>
+<tr><td>SOP 拨盘表</td><td>400 类 kd=0.85；440 类 kd=1.0（要快，首超 4~6°）或 1.1（要稳，到达 1.6~3.3s 双模）；200 类冷炉 1.1（热炉体跑 200 暂无 ≤3° 解，等自适应版）</td></tr>
+<tr><td>规程</td><td>阶跃前起点稳 ≥15s；重要测试记录当时保温 MV（免费的炉态仪表）</td></tr>
+</table>
+
+</body>
+</html>
