@@ -8,15 +8,16 @@ G3: 7-19 两场 13 个标注 kd 测试, 控制器按机上原样 (旧表记账+c
     对象 = 元件(大信号) + 两层墙; 各场观测器初值由该场降温段反拟 (参数冻结)。
     过关: 冲透/爬行方向 13/13。
 
-★ 状态 (2026-07-21 第一轮):
-  G2 = 8.96° 未过 (s_hi=1.048, τe_hi=0.108s, kq_p 顶界 0.6 -- 结构仍缺一块);
-  G3 = 方向 13/18 (从 7/18 大幅上来)。
-  已复现 (重要!): 200 靶点全部 5 个 -- 含热炉体 8~18° 大超调的幅度级
-    (0.66s/18.6° vs 实测 0.71s/18.1°), "适应性差之谜"的现象已被模型捕获;
-    400 靶点 5/7 (两个错的都是真机踩悬崖翻面的边缘例, 掷硬币本不可复现)。
-  未复现: 200→440 冲透组 4 例全错 (仿真过阻尼爬行, 实测冲透 3~10.7°) --
-    440 冲刺段 (>315°C, 90%满幅) 的热沉积仍未建对; kq_p 顶界提示衬面
-    过热层/辐射非线性一类结构缺失。下一步专攻此段, 无需新机上数据。
+★ 状态 (2026-07-21 第三轮): G2=8.83° 未过, G3=14/18 (上限 17/18: 早场 kd=0.9
+  同参数两次翻面是掷硬币, 确定性仿真只能对一个)。
+  结构裁决记录: 辐射分流 f_split 被拟合否决 (→0.014≈0); 缩水改台阶饱和型
+  (315→360 渐进后平, 依 7-16 直测 380~480 平坦 g≈0.75) -- +1 例翻正, 形状正确。
+  剩余failure=440 冲透组 3 例 (仿真过刹爬行): kq_p 仍顶界 0.35, 且 G2 最差窗
+  是"复热型"起点 (147→400: 11.5°, 66→401: 14.1°) -- 两条线索并存。
+  下一步 (禁止再盲加参数): ①残差形状取证 (逐窗误差-时间曲线分段归因);
+  ②控制器回放取证: 把控制器复刻直接喂真机 PV/MV, 提取真实 z2 在 440 冲刺中的
+  轨迹, 与仿真 z2 对照 -- 无需对象模型即可分离"对象错"vs"记账复刻错";
+  ③7-19 晚场墙参数疑似不迁移 (fit_w0 残差 63°), 允许每场 amb/衬参数微调再验。
 用法: python3 analysis/g2_g3_pipeline.py
 """
 import os
@@ -60,11 +61,13 @@ def blend(u, lo, hi):
 
 
 def q_true(u, s_hi, y=0.0, kq_p=0.0):
-    """诚实表 × 高段温度缩水 (对象侧; 7-16 实测 90%@380-425 约 0.8×)"""
+    """诚实表 × 高段温度缩水 -- 台阶饱和型 (7-16 直测: 380~480°C g≈0.74~0.80 平坦,
+       非线性下坡; 315→360 渐进, 之后平在 1−kq_p)"""
     base = float(np.interp(u, TAB.u_bp, TAB.q_bp)) * blend(u, S_LO, s_hi)
     if kq_p > 0.0 and y > 315.0 and u > 30.0:
-        g = 1.0 - kq_p * min(max((u - 30.0) / 30.0, 0.0), 1.0) * (y - 315.0) / 100.0
-        base *= max(g, 0.5)
+        ramp = min(max((y - 315.0) / 45.0, 0.0), 1.0)
+        g = 1.0 - kq_p * min(max((u - 30.0) / 30.0, 0.0), 1.0) * ramp
+        base *= g
     return base
 
 
@@ -82,12 +85,12 @@ def observer(path, w10=AMB, w20=AMB, dto=0.25):
     return T_, w1, w2
 
 
-def plant_step(y, w1, w2, qf, ud, s_hi, te_hi, dt=DT, kq_p=0.0):
+def plant_step(y, w1, w2, qf, ud, s_hi, te_hi, dt=DT, kq_p=0.0, f_sp=0.0):
     a1, b1, c1, d1, e1 = (P_WALL[k] for k in ('a1', 'b1', 'c1', 'd1', 'e1'))
     te = blend(ud, TE_LO, te_hi)
     qf += dt * (q_true(ud, s_hi, y, kq_p) - qf) / te
-    dy = qf - a1 * (y - w1)
-    dw1 = b1 * (y - w1) - c1 * (w1 - w2)
+    dy = qf * (1.0 - f_sp) - a1 * (y - w1)
+    dw1 = b1 * (y - w1) - c1 * (w1 - w2) + f_sp * qf * (b1 / a1)
     dw2 = d1 * (w1 - w2) - e1 * (w2 - AMB)
     return y + dt * dy, w1 + dt * dw1, w2 + dt * dw2, qf
 
@@ -114,25 +117,30 @@ def g2_fit():
     obs = observer(F20)
     wins = heat_windows(F20, HEATS20, obs)
 
-    def resid(x):
-        s_hi, te_hi, kq_p = x
-        r = []
-        for useq, pref, w10, w20, upre in wins:
-            y, w1, w2 = pref[0], w10, w20
-            qf = q_true(upre, s_hi)
-            nd = max(1, int(round(THETA / DT)))
-            sim = np.empty(len(useq))
-            for i in range(len(useq)):
-                ud = float(useq[max(0, i - nd)])
-                y, w1, w2, qf = plant_step(y, w1, w2, qf, ud, s_hi, te_hi, kq_p=kq_p)
-                sim[i] = y
-            r.append((sim - pref)[::20])
-        return np.concatenate(r)
+    def sim_win(x, w):
+        s_hi, te_hi, kq_p, f_sp = x
+        useq, pref, w10, w20, upre = w
+        y, w1, w2 = pref[0], w10, w20
+        qf = q_true(upre, s_hi)
+        nd = max(1, int(round(THETA / DT)))
+        sim = np.empty(len(useq))
+        for i in range(len(useq)):
+            ud = float(useq[max(0, i - nd)])
+            y, w1, w2, qf = plant_step(y, w1, w2, qf, ud, s_hi, te_hi, kq_p=kq_p, f_sp=f_sp)
+            sim[i] = y
+        return sim
 
-    res = least_squares(resid, [0.9, 0.12, 0.2], bounds=([0.5, 0.03, 0.0], [1.2, 0.30, 0.6]),
+    def resid(x):
+        return np.concatenate([(sim_win(x, w) - w[1])[::20] for w in wins])
+
+    res = least_squares(resid, [0.9, 0.12, 0.2, 0.15],
+                        bounds=([0.6, 0.03, 0.05, 0.0], [1.2, 0.30, 0.35, 0.5]),
                         diff_step=0.03)
     rmse = np.sqrt(np.mean(res.fun ** 2))
-    return float(res.x[0]), float(res.x[1]), float(res.x[2]), rmse
+    for k, w in enumerate(wins):
+        e = sim_win(res.x, w) - w[1]
+        print(f'    窗{k+1} ({w[1][0]:.0f}→{w[1].max():.0f}): RMSE {np.sqrt(np.mean(e**2)):.2f}°')
+    return tuple(float(v) for v in res.x) + (rmse,)
 
 
 # ---------- G3 ----------
@@ -183,10 +191,18 @@ def fit_w0(path):
 
     res = least_squares(resid, [120., 80.], bounds=([AMB, AMB], [350., 300.]), diff_step=0.05)
     rmse = np.sqrt(np.mean(res.fun ** 2))
+    # 诊断: 每段初速率反推衬温 vs 观测器
+    obs = observer(path, float(res.x[0]), float(res.x[1]))
+    T_, w1t, _ = obs
+    diag = []
+    for t0, tt, yy in falls:
+        sl = (yy[6] - yy[0]) / (tt[6] - tt[0])
+        diag.append(f'{t0:.0f}s: 反推衬={yy[0] + sl/P_WALL["a1"]:.0f} 观测器衬={np.interp(t0, T_, w1t):.0f}')
+    print('    [w1 对照] ' + ' | '.join(diag))
     return float(res.x[0]), float(res.x[1]), rmse
 
 
-def g3_run(s_hi, te_hi, kq_p):
+def g3_run(s_hi, te_hi, kq_p, f_sp):
     print('\nG3: 13+5 测试闭环复现 (控制器=机上原样)')
     obs_cache = {}
     ok = 0; n = 0
@@ -231,7 +247,7 @@ def g3_run(s_hi, te_hi, kq_p):
                 va *= max(g, 0.4)
             buf = [va] + buf[:-1]
             uh.append(u)
-            yv, w1, w2, qf = plant_step(yv, w1, w2, qf, float(uh[i]), s_hi, te_hi, kq_p=kq_p)
+            yv, w1, w2, qf = plant_step(yv, w1, w2, qf, float(uh[i]), s_hi, te_hi, kq_p=kq_p, f_sp=f_sp)
         v1, v2 = z1, 0.0
         N = int(8.0 / DT)
         yy = np.empty(N)
@@ -256,7 +272,7 @@ def g3_run(s_hi, te_hi, kq_p):
                 va *= max(g, 0.4)
             buf = [va] + buf[:-1]
             uh.append(u)
-            yv, w1, w2, qf = plant_step(yv, w1, w2, qf, float(uh[len(upre) + i]), s_hi, te_hi, kq_p=kq_p)
+            yv, w1, w2, qf = plant_step(yv, w1, w2, qf, float(uh[len(upre) + i]), s_hi, te_hi, kq_p=kq_p, f_sp=f_sp)
             yy[i] = yv
         tt2 = np.arange(N) * DT
         cross = np.where(yy >= svt)[0]
@@ -270,7 +286,7 @@ def g3_run(s_hi, te_hi, kq_p):
 
 
 if __name__ == '__main__':
-    s_hi, te_hi, kq_p, rmse = g2_fit()
-    print(f'G2: s_hi={s_hi:.3f}  τe_hi={te_hi:.3f}s  kq_p={kq_p:.3f}  加热窗 RMSE={rmse:.2f}°  '
-          f'({"过关" if rmse <= 3.0 else "未过 ≤3° 线"})')
-    g3_run(s_hi, te_hi, kq_p)
+    s_hi, te_hi, kq_p, f_sp, rmse = g2_fit()
+    print(f'G2: s_hi={s_hi:.3f}  τe_hi={te_hi:.3f}s  kq_p={kq_p:.3f}  f_split={f_sp:.3f}  '
+          f'加热窗 RMSE={rmse:.2f}°  ({"过关" if rmse <= 3.0 else "未过 ≤3° 线"})')
+    g3_run(s_hi, te_hi, kq_p, f_sp)
