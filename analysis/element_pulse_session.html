@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>元件测温场——20 分钟操作卡</title>
+<style>
+  body { font-family: "Microsoft YaHei", sans-serif; max-width: 800px; margin: 24px auto; padding: 0 16px; color: #222; line-height: 1.7; }
+  h1 { font-size: 1.4em; border-bottom: 3px solid #1f77b4; padding-bottom: 8px; }
+  h2 { font-size: 1.1em; margin-top: 1.5em; border-left: 5px solid #1f77b4; padding-left: 10px; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 0.97em; }
+  th, td { border: 1px solid #bbb; padding: 7px 10px; text-align: left; }
+  th { background: #eef4fa; }
+  td.c { text-align: center; font-weight: bold; }
+  .rule { background: #fff8e6; border: 1px solid #e0c060; padding: 10px 14px; border-radius: 6px; margin: 10px 0; }
+  .safe { background: #eef7ee; border: 1px solid #7ab87a; padding: 8px 14px; border-radius: 6px; }
+  .why { color: #666; font-size: 0.92em; }
+</style>
+</head>
+<body>
+
+<h1>元件测温场——20 分钟操作卡</h1>
+
+<p><b>目的</b>：测加热元件的两个数——冷启动功率冲幅度（β）和元件冷却时间常数（τ_c）。
+这是配方表里 kd 列退役（升级到单一律 [10]）前需要的<b>最后一块数据</b>。</p>
+
+<p><b>原理一句话</b>：打五发<b>完全相同</b>的脉冲（90%、约 1 秒），唯一的变量是
+"打之前元件断电了多久"——五发起步速率的差别，就是元件冷热曲线本身。</p>
+
+<h2>操作序列</h2>
+
+<table>
+<tr><th>#</th><th>动作</th><th>等待</th><th>说明</th></tr>
+<tr><td class="c">0</td><td>闭环稳在 <b>150°C</b>，稳住 ≥60 秒；开始 CSV 记录</td><td>~3 min</td><td>起点；此时元件是"全热"状态</td></tr>
+<tr><td class="c">1</td><td>切手动 → <b>MV=90% 打约 1 秒</b> → 拉回 MV=0</td><td>—</td><td>热元件基准发</td></tr>
+<tr><td class="c">2</td><td>MV=0 干等 <b>约 5 秒</b> → 同样打一发 → 回 0</td><td>5 s</td><td>元件几乎没冷</td></tr>
+<tr><td class="c">3</td><td>MV=0 干等 <b>约 30 秒</b> → 打一发 → 回 0</td><td>30 s</td><td>半冷</td></tr>
+<tr><td class="c">4</td><td>MV=0 干等 <b>约 2 分钟</b> → 打一发 → 回 0</td><td>2 min</td><td>大半冷</td></tr>
+<tr><td class="c">5</td><td>MV=0 干等 <b>约 10 分钟</b> → 打一发 → 回 0</td><td>10 min</td><td>全冷锚点（这段等待顺带多送一段长降温数据）</td></tr>
+<tr><td class="c">6</td><td>回闭环，随意；停止记录</td><td>—</td><td>收工</td></tr>
+</table>
+
+<h2>只有三条纪律</h2>
+
+<div class="rule">
+<b>1. 发与发之间 MV 必须保持 0，不要回闭环稳温。</b>
+<span class="why">一回稳温元件就被重新加热，前面的等待白等。整场的"温度会一路往下滑"是正常的、预期内的。</span><br>
+<b>2. "90%" 和 "约 1 秒" 都不用掐准。</b>
+<span class="why">手动打点即可，早晚零点几秒无所谓——分析以 CSV 里实际记录的 MV 波形为准。</span><br>
+<b>3. CSV 全程不要中断；另外手记一下当时室温。</b>
+</div>
+
+<h2>安全</h2>
+
+<div class="safe">基温 150°C，每发温升一两百度，峰值不超过 ~400°C，距 500°C 红线很远；无高温驻留。
+五发的起点温度各不相同（150 → ~70）是预期内的，操作上不需要任何补偿。</div>
+
+<h2>做完之后</h2>
+
+<p>CSV 回传即可。判读产出 β、τ_c → 闭环复现关卡（G3）终验 → [10] 单一律参数认证 →
+<b>配方表 kd 列退役，一组全局参数覆盖全部温度与炉态</b>。</p>
+
+</body>
+</html>
