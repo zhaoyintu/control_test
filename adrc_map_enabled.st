@@ -22,6 +22,20 @@
          wc=1.55 时首超 ~8°, wc 越大越糟 (wc=4 无阻尼可荡 40°)。lrKd 用 ESO 的速度
          估计 (lrB0·lrVDelayed + lrZ2, 即 ż1 的模型部分) 补回阻尼, 不对 PV 求导无噪声。
          这正是 PID 参考控制器里 D 项的角色 -- 但配合查表/z2/记账后可跨温区通用。
+    [10] 可选 刹车预算律三件套 (默认全关, 2026-07-22; 目标 = 配方 kd 表退役):
+         [10a] lrKb/lrBmin: 控制律加停车距离阻尼 −v̂·|v̂|/(2·max(−z2, lrBmin))。
+               B̂=−z2 是"免费刹车"的在线读数, 随靶点/墙态/日漂自动变化。
+               ⚠ 使能前置条件: 必须已换装"诚实表" aMapV (旧表中低段虚增 2.03×,
+               7-22 断电初降速 17 点直测), 否则 −z2 单位虚大一倍 → 刹车距离
+               低估 → 超调方向, 危险!
+         [10b] lrBeta/lrTauEC/lrTauEH90: 元件温度代理 c_e 在线积分 (连续量) +
+               冷元件功率如实记账。放电律已直测 (β=0.42 耦合形式, τ_c=103s);
+               部分功率充电律待探针场验证, 之前 lrBeta 保持 0。
+         包络认证 (analysis/cert10_envelope.py): 墙态/靶点自适应成立, 失败方向
+         全部偏慢; 无在线信息时保守下限 4s 级, 接入 [10b]+机上拨盘后预期回到
+         1.5~1.7s 级 (待 G5 上机验收)。
+         v2 调节器 (7-22 换料) 配套: nDeadSteps 12→6 (θ_v2=0.06 脉冲场实测),
+         aMapV 按 诚实×0.82 换装 (提案值待 4 点复核, 见 analysis/fit_element_0722.py)。
    附带: FC_InterpLookup / FC_InterpInverse 两个函数 (工程里若已有同名实现, 删掉本文件中的即可)
 
    参数档位 (孪生 v2 仿真, 100→400):
@@ -159,6 +173,14 @@ VAR_INPUT
                                   // lrWr 调大去掉 SV 平滑后环路失去阻尼 (欠阻尼二阶,
                                   // ζ=(1+kd)/(2√(wc·τ总)), τ总≈0.36s), 必须由本项补回。
                                   // 第4档投用 0.75; ≥0.85 过阻尼变爬行 (悬崖, 勿超)
+    lrKb       : LREAL := 0.0;    // [10a] 刹车预算阻尼增益; 0=关闭。
+                                  // ⚠ 前置条件: 必须已换装"诚实表"aMapV (见头部 [10] 说明),
+                                  // 旧虚增表下 -lrZ2 读数偏大一倍 -> 刹车距离低估 -> 危险!
+    lrBmin     : LREAL := 10.0;   // [10a] 刹车预算下限 [°C/s] (墙推/z2≥0 时的保护地板)
+    lrBeta     : LREAL := 0.0;    // [10b] 元件冷启动冲幅度; 0=关闭; 7-22 实测 0.42 (耦合形式)
+    lrTauEC    : LREAL := 103.0;  // [10b] 元件冷却时间常数 [s] (7-22 变间隔脉冲场实测)
+    lrTauEH90  : LREAL := 0.35;   // [10b] 满幅充热时间常数 [s]; ⚠ 部分功率充电律
+                                  // 尚未经专属激励验证 (待充电律探针场), 之前默认关闭
     nMapPoints : DINT := 9;       // breakpoints actually used in aMapU/aMapV
     // q∞ 实测表 (2026-07-15): MV% -> 稳态加热马力 [°C/s]。65% 以上平坦是实测特性。
     // 85% 点与 70% 实测同值(335), 平段会让反查病态, 已并入 70-100 直线段。
@@ -196,6 +218,8 @@ VAR
     lrVDelayed : LREAL;
     lrVFilt    : LREAL;                   // lrTauF>0 时: FIFO 出口一阶滤波状态 (ESO 惯性模型)
     lrGHot     : LREAL;                   // lrKqHot>0 时: 记账温度修正系数
+    lrVHat     : LREAL;                   // [9]/[10a]: ESO 的 PV 速度估计 = b0·vd + z2
+    lrCe       : LREAL;                   // [10b]: 元件温度代理 ∈[0,1] (连续量, 非布尔)
     nSteps     : DINT;                    // nDeadSteps 越界保护后的实际拍数
 
     i : DINT;
@@ -224,6 +248,7 @@ IF xEnable THEN
         lrZ2  := 0.0;
         lrRV1 := lrPV;    // 从当前温度起步: 带偏差投入时按 lrWr 平滑逼近 SV, 无瞬间阶跃
         lrRV2 := 0.0;
+        lrCe  := 0.0;     // [10b] 上电一律当元件全冷 (安全侧: 补偿偏多->偏慢不超调), τ_h 秒级自动收敛
         bFbState := E_FB_RUNST.init;
     END_IF
 ELSE
@@ -267,10 +292,17 @@ ELSE
 
     // === 3) control law: proportional feedback on the ESO's clean estimate,
     //        cancel the estimated total disturbance, invert the measured q(u) map ===
-    // [9] 速度阻尼: lrB0*lrVDelayed + lrZ2 = ESO 对 PV 速度的模型估计 (ż1 的无修正部分)。
+    // [9] 速度阻尼: lrVHat = lrB0*lrVDelayed + lrZ2 = ESO 对 PV 速度的模型估计。
     //     不对 PV 求导, 无噪声放大。lrKd=0 时与旧版逐位一致。
+    // [10a] 刹车预算阻尼 (默认 lrKb=0 关): 停车距离物理 v̂²/(2·B̂), B̂=max(−z2, Bmin)
+    //     = 免费刹车的在线读数。诚实表前提下 z2 单位为真 °C/s (见头部警告)。
     lrU0   := lrWc * (lrRV1 - lrZ1);
-    lrVCmd := (lrU0 - lrZ2 - lrKd * (lrB0*lrVDelayed + lrZ2)) / lrB0;   // v [°C/s]
+    lrVHat := lrB0 * lrVDelayed + lrZ2;
+    lrVCmd := lrU0 - lrZ2 - lrKd * lrVHat;
+    IF lrKb > 0.0 THEN
+        lrVCmd := lrVCmd - lrKb * lrVHat * ABS(lrVHat) / (2.0 * MAX(0.0 - lrZ2, lrBmin));
+    END_IF
+    lrVCmd := lrVCmd / lrB0;                            // heating-rate demand v [°C/s]
 
     IF xError THEN
         lrUCmd := lrVCmd;                               // 表非法: 直通 (等价现行无表版)
@@ -281,6 +313,16 @@ ELSE
         lrUCmd := FC_InterpInverse(aMapU, aMapV, nMapPoints, lrVCmd);   // -> real MV%
     END_IF
     lrMV := LIMIT(lrMVMin, lrUCmd, lrMVMax);
+
+    // [10b] 元件温度代理更新 (连续量; 默认 lrBeta=0 关闭)
+    IF lrBeta > 0.0 THEN
+        IF lrMV > 2.0 THEN
+            lrCe := lrCe + lrCycleT * (1.0 - lrCe) / (lrTauEH90 * 90.0 / MAX(lrMV, 5.0));
+        ELSE
+            lrCe := lrCe - lrCycleT * lrCe / lrTauEC;
+        END_IF
+        lrCe := LIMIT(0.0, lrCe, 1.0);
+    END_IF
 
     // === 4) advance the delay FIFO with what v ACTUALLY happened (post-clamp!) ===
     IF xError THEN
@@ -296,6 +338,10 @@ ELSE
                 lrGHot := 0.4;
             END_IF
             lrVApplied := lrVApplied * lrGHot;
+        END_IF
+        IF lrBeta > 0.0 THEN
+            // [10b] 冷元件多给的功率如实记账 -> z1/z2 冲刺期不再欠账
+            lrVApplied := lrVApplied * (1.0 + lrBeta * (1.0 - lrCe));
         END_IF
     END_IF
     FOR i := 31 TO 1 BY -1 DO
