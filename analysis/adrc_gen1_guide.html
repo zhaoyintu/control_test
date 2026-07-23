@@ -153,11 +153,26 @@ vc(想要的加热速率 °C/s) ──反查 q(u) 表──► MV%      ← Hamm
 按此法爬完一遍后，你手里就有了这台机器自己的速率表——下次复标就可以像上表一样直接写死时长了。</div>
 
 <h3>2.2 判读（分析侧脚本，产出可直接粘贴的 ST 参数）</h3>
-<table>
+
+<p><b>拿到 CSV 后的命令序列</b>（仓库根目录执行；①② 是通用命令行工具，任何一场的 CSV 直接喂）：</p>
+<pre>python3 analysis/theta_from_bump.py 数据.csv               # ① 粗判: θ / q断点 / 稳态锚点, 输出可粘贴 ST 变量表
+python3 analysis/theta_from_bump.py 数据.csv --write-twin  #    人工确认无误后再跑一次, 写入孪生 twin_params.json
+python3 analysis/fit_taue.py 数据.csv                      # ② 精判: 自动找每一发手动跳变, 整段拟合分离 θ/τe/q∞
+python3 analysis/replay_identify.py 数据.csv 跳变时刻s      # ③ 上机验证场之后: 回放确认实跑参数与标注一致</pre>
+<p class="why">fit_qinf_0715.py 不在此列——它是 7-15 场的<b>参考实现</b>，CSV 路径和每发跳变时刻表（BEATS）写死在文件里，
+换数据要改文件；fit_taue.py 做同样的整段拟合且自动找跳变（判定：MV 单拍跳 ≥3% 且新值保持 ≥0.35s——按规程做的手动跳变都满足），新数据一律用它。
+CSV 格式前提：列顺序为 time/PV1/PV2/SV/MV（脚本按位置认列，列名无所谓）；采样应保持 10ms 级——θ 只有 0.06~0.12s，记录仪慢了就分辨不出来（脚本内部会统一重采样到 10ms 网格）。</p>
 <tr><th>产出</th><th>方法与工具</th><th>埋坑警示（都是踩过的）</th></tr>
 <tr><td><b>q∞ 表</b>（aMapU/aMapV）</td><td>整段拟合分离 q∞/τe/θ：<code>analysis/fit_qinf_0715.py</code>（参考实现）；粗判 <code>theta_from_bump.py</code></td>
 <td>必须<b>整段拟合</b>取稳态马力 q∞——短窗斜率会把元件惯性 τe 混进去，高段低估 ~40%。
 MV 重采样必须<b>前值保持</b>（线性插值会把阶跃劈成斜坡导致漏检）。</td></tr>
+<tr><td><b>散热参数 h1/c（拟合模型的底座，新机器专属坑）</b></td>
+<td>theta_from_bump.py 和 fit_taue.py 的拟合模型里都有散热项 h1·(T−c)，两者<b>从 twin_params.json 读取</b>。
+新机器流程：第一遍先用文件里的旧值跑 → 看输出的"稳态锚点"自检段 → 用两个锚点反解本机 h1/c
+（q(保温MV①)=h1·(300−c)、q(保温MV②)=h1·(430−c)，两式两未知数）→ 改写 twin_params.json → 重跑一遍。
+一次迭代即收敛（判据：两锚点自检对上）。</td>
+<td>换机器不更新 h1/c 就直接跑，低电平 q 点会被上一台炉子的散热带偏——散热修正项与低电平马力同数量级。
+同机复标（数据谱系不变）无此坑，直接跑即可。</td></tr>
 <tr><td><b>θ → nDeadSteps</b></td><td>阶跃后 PV 起动延迟；nDeadSteps = θ / 10ms</td>
 <td>θ 对拟合残差是<b>阶梯函数</b>（梯度为零），最小二乘动不了它——必须网格扫描。
 取小幅<b>上行</b>值（下行 θ 更长，元件放热；大电平 θ 偏短，辐射耦合）。

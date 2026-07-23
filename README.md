@@ -56,7 +56,8 @@ print(metrics(yy, 100.0, 400.0))   # (rise90[s], 超调[°C], settle±1°[s])
 | 脚本 | 用途 | 典型命令 |
 |---|---|---|
 | `analysis/theta_from_bump.py` | bump session 判读：θ、q 断点、稳态锚点，输出可粘贴 ST 变量表；`--write-twin` 粗校孪生 | `python3 analysis/theta_from_bump.py 数据.csv` |
-| `analysis/fit_qinf_0715.py` | 整段拟合分离 q∞/τe/θ（精校，7-15 的参考实现） | 按文件内说明改路径后运行 |
+| `analysis/fit_qinf_0715.py` | 整段拟合分离 q∞/τe/θ（精校，7-15 的参考实现；新数据用 fit_taue.py） | 按文件内说明改路径后运行 |
+| `analysis/fit_taue.py` | 整段拟合通用版：自动找手动跳变，逐发分离 θ/τe/q∞ + τe(T) 汇总 | `python3 analysis/fit_taue.py 数据.csv` |
 | `analysis/twin_blindtest.py` | 孪生 vs 真机闭环盲测（v1/v2 对照） | `python3 analysis/twin_blindtest.py` |
 | `analysis/ladder_v2_scan.py` | 开表后参数爬梯扫描（标称+应力） | `python3 analysis/ladder_v2_scan.py` |
 | `analysis/replay_identify.py` | 回放辨识：确认真机某次阶跃实跑的参数 | `python3 analysis/replay_identify.py 数据.csv 180.3` |
