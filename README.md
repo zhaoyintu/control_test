@@ -3,8 +3,11 @@
 对 AIC9 加热炉（通道 1）的 ADRC（自抗扰）温度控制项目：用真机 bump 测试标定执行器特性
 q(u)、纯滞后 θ 与元件热惯性 τe，构建 Python 数字孪生，在孪生上整定参数后再上真机验证。
 
-- 交付控制代码：`adrc_map_enabled.st`（开查表版 FB_ADRC_Base，含插值函数与 lrTauF 升级）
-- 完整操作流程文档：`analysis/theta_bump_test.html`（浏览器打开；标定怎么做、数据怎么用、参数怎么落地）
+- 交付控制代码：`adrc_map_enabled.st`（开查表版 FB_ADRC_Base，改动 [1]~[9]，[10] 默认关）
+- **⭐ 第一代完备指南：`analysis/adrc_gen1_guide.html`**（从零到 1.5~1.7s/≤3° 的全部路径：
+  三场标定 + 代码参数 + 理论初值公式 + 拨盘规则 + SOP/维护/换硬件重标 + 诚实条款）
+- 单场流程文档：`analysis/theta_bump_test.html`（bump 场细则）、`wall_data_session.html`、
+  `element_pulse_session.html`；方法论移植手册：`analysis/adrc_methodology_handbook.html`
 
 ## 环境依赖
 
