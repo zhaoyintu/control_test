@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """验证 theta_from_bump.py v2 的漂移容忍: 孪生造数 -> 脚本判读 -> 对比真值"""
 import sys
+import os
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, '/home/yiz/workspace/src/control_test/analysis')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from twin import Twin, DT
 
 import tempfile; OUT = tempfile.gettempdir()

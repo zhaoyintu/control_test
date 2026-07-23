@@ -7,3 +7,5 @@ user_feedback/QtSim_V10_Src/
 
 # 与原始 CSV 逐字节相同的重复文件
 user_feedback/*copy.csv
+dist/
+__pycache__/

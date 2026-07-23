@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """开表后(v空间)参数爬梯 @ 孪生 v2: 标称扫描 -> 短名单应力测试"""
 import sys
+import os
 import numpy as np
 
-sys.path.insert(0, '/home/yiz/workspace/src/control_test/analysis')
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from twin import Twin, metrics
 
 BASE = Twin()
